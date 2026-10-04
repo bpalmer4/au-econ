@@ -395,9 +395,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the chart modules selected on the command line; return the exit code."""
     args = _parse_args(argv)
     if args.variables or args.topics:
-        for wanted, heading, shared in ((args.variables, "short name", VARIABLES), (args.topics, "topic", TOPICS)):
-            if wanted:
-                _print_table((heading, "meaning"), sorted(shared.items()))
+        if args.variables:
+            _print_table(("short name", "meaning"), sorted(VARIABLES.items()))
+        if args.topics:
+            print("\n".join(sorted(TOPICS)))
         return EXIT_OK
     # files only, never a window: the macOS default backend lays text out a few pixels
     # differently from Agg (which notebooks use), and launchd jobs have no window session

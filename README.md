@@ -14,7 +14,7 @@ uv run run.py cpi               # one release, by short name or catalogue number
 uv run run.py rba               # a topic: every module in it
 uv run run.py somp --list       # the charts in a module
 uv run run.py rba-fx --charts long_run_exchange_rates   # selected charts only
-uv run run.py --topics          # the topic words and what they mean
+uv run run.py --topics          # the topic words
 uv run run.py --all             # everything
 ```
 
@@ -23,8 +23,9 @@ Each run names its own chart folder: `CHARTS/<release> - <title>/`, or
 the folder it fills; a `--charts` run clears nothing.
 
 Data come from the ABS, the RBA, the OECD, the BIS, FRED, the World Bank, DB.nomics,
-Yahoo Finance, the EIA, OPEC and CME, other central banks and debt offices, and Australian
-agencies (AIP, DCCEEW, ASIC, AFSA, Home Affairs). API keys live in `KEYS/` and downloads
+Yahoo Finance, OilPrice.com, the EIA, OPEC and CME, other central banks and debt offices,
+and Australian agencies (AIP, DCCEEW, ASIC, AFSA, Home Affairs, and the AIHW, whose family
+violence workbook also carries AIC homicide data). API keys live in `KEYS/` and downloads
 are cached in `CACHE/` (both gitignored).
 
 ## The old world
@@ -35,7 +36,8 @@ alongside them: each notebook is recreated in `src/au_econ/`, checked pixel-for-
 against the notebook's charts, then improved. When everything has been rebuilt, the
 notebooks are deleted in one go. The design and the decisions behind it are in
 [docs/restructure-spec.md](docs/restructure-spec.md); chart conventions are in its
-section 11.
+section 11. The checks used along the way (pixel comparison of chart folders, footer
+collisions, one stage-two pass) are in `tools/`.
 
 ## Setup
 

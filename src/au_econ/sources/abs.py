@@ -11,6 +11,7 @@ from functools import cache
 from typing import TYPE_CHECKING, Unpack
 from urllib.parse import urljoin
 
+import pandas as pd
 import readabs as ra
 import requests
 import sdmxabs as sa
@@ -31,6 +32,11 @@ TIMEOUT = 30  # seconds
 CPI_STRUCTURE, CPI_DIMENSION = "CPI", "INDEX"
 CPI_LEVELS = {0: "aggregate", 1: "group", 2: "sub-group", 3: "class"}
 CPI_ROOT = "All groups CPI"
+
+# pivot-table data cubes (e.g. 6202.0 LMS1-5): long-form workbooks, not time-series tables
+PIVOT_DATA_SHEET = "Data 1"  # suffix of the data sheet's name
+PIVOT_PERIOD = "month"  # the header row's first cell names the period: "Month", "Mid-quarter month"
+PIVOT_MEASURE = "('000)"  # measure columns end with their unit
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,45 @@ def latest_data_cube_url(release_page: str, cube: str) -> str:
 def get_data_cube(url: str) -> bytes:
     """Return an ABS data cube workbook (not a time-series table, so not readabs), cached on disk."""
     return get_file(url, prefix="abs")
+
+
+@cache
+def _pivot_cube(cat: str, cube: str) -> pd.DataFrame:
+    """Read a pivot-table data cube's data sheet into long form (cached; not for mutation)."""
+    sheets = ra.grab_abs_url(cat=cat, single_excel_only=cube, verbose=False)
+    sheet = next((frame for name, frame in sheets.items() if name.endswith(PIVOT_DATA_SHEET)), None)
+    if sheet is None:
+        raise ValueError(f"ABS {cat} {cube}: no '{PIVOT_DATA_SHEET}' sheet")
+    header_rows = [
+        row for row, cell in enumerate(sheet.iloc[:, 0]) if isinstance(cell, str) and PIVOT_PERIOD in cell.lower()
+    ]
+    if not header_rows:
+        raise ValueError(f"ABS {cat} {cube}: no header row naming the period")
+    header = header_rows[0]
+    frame = sheet.iloc[header + 1 :].copy()
+    frame.columns = pd.Index(sheet.iloc[header])
+    frame = frame.dropna(axis="columns", how="all")
+    period = frame.columns[0]
+    dates = pd.to_datetime(frame[period], errors="coerce")
+    frame = frame[dates.notna()]  # drops blank and footnote rows below the data
+    frame[period] = pd.PeriodIndex(dates[dates.notna()], freq="M")
+    for column in frame.columns:
+        if isinstance(column, str) and column.endswith(PIVOT_MEASURE):
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    if frame.empty:
+        raise ValueError(f"ABS {cat} {cube}: no data rows")
+    return frame.reset_index(drop=True)
+
+
+def get_pivot_cube(cat: str, cube: str) -> pd.DataFrame:
+    """Return an ABS pivot-table data cube (e.g. 6202.0 "LMS2") as a long table, one row per cell.
+
+    Pivot cubes are not time-series spreadsheets, so read_abs_cat cannot read them. The
+    columns are the cube's own: the period first (monthly Periods), then its dimensions
+    (e.g. "Sex", "Age"), then its measures, numeric (e.g. "Employed full-time ('000)").
+    A copy, so the caller may change it.
+    """
+    return _pivot_cube(cat, cube).copy()
 
 
 @dataclass(frozen=True)

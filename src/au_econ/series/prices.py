@@ -1,4 +1,4 @@
-"""Price indexes wanted by more than one module: CPI measures and the Living Cost Index.
+"""Price and wage indexes wanted by more than one module: CPI measures, the Living Cost Index, WPI, AWOTE.
 
 Each getter is cached for the run and returns (series, units, series type), with the
 series a copy, so a caller changing it cannot corrupt the cache.
@@ -7,6 +7,7 @@ series a copy, so a caller changing it cannot corrupt the cache.
 from functools import cache
 from typing import TYPE_CHECKING
 
+import pandas as pd
 import readabs as ra
 from readabs import metacol as mc
 
@@ -28,6 +29,16 @@ INDEX_NUMBERS = "Index Numbers"
 LCI_CATALOGUE = "6467.0"
 LCI_TABLE = "646701"
 LCI_SELECTOR = {"Index Numbers": mc.did, "Employee households": mc.did, "All groups": mc.did}
+
+# --- wages: WPI (6345.0) and AWOTE (6302.0)
+WPI_CATALOGUE, WPI_TABLE = "6345.0", "634501"
+WPI_DID = (
+    "Quarterly Index ;  Total hourly rates of pay excluding bonuses ;  "
+    "Australia ;  Private and Public ;  All industries ;"
+)
+AWOTE_CATALOGUE, AWOTE_TABLE = "6302.0", "6302003"
+AWOTE_DID = "Earnings; Persons; Full Time; Adult; Ordinary time earnings ;"
+ORIGINAL = "Original"
 
 
 @cache
@@ -70,4 +81,40 @@ def _living_cost_index() -> tuple[Series, str, str]:
 def get_living_cost_index() -> tuple[Series, str, str]:
     """Return the quarterly Living Cost Index for employee households (All groups)."""
     series, units, stype = _living_cost_index()
+    return series.copy(), units, stype
+
+
+@cache
+def _wpi() -> tuple[Series, str, str]:
+    """Fetch the Wage Price Index, seasonally adjusted (cached; not for mutation)."""
+    data, meta = ra.read_abs_cat(WPI_CATALOGUE, single_excel_only=WPI_TABLE, verbose=False)
+    selector = {WPI_TABLE: mc.table, WPI_DID: mc.did, SEASONALLY_ADJUSTED: mc.stype, INDEX_NUMBERS: mc.unit}
+    table, series_id, units = ra.find_abs_id(meta, selector, verbose=False)
+    return data[table][series_id], units, SEASONALLY_ADJUSTED
+
+
+@cache
+def _awote() -> tuple[Series, str, str]:
+    """Fetch AWOTE, Original, moved onto December-ending quarters (cached; not for mutation).
+
+    Published every six months (May and November) on a Q-NOV index; reinterpreted onto Q-DEC
+    so it aligns with other quarterly series. Matched exactly, so it does not also pick up
+    the standard-error series.
+    """
+    data, meta = ra.read_abs_cat(AWOTE_CATALOGUE, single_excel_only=AWOTE_TABLE, verbose=False)
+    selector = {AWOTE_TABLE: mc.table, AWOTE_DID: mc.did, ORIGINAL: mc.stype}
+    table, series_id, units = ra.find_abs_id(meta, selector, exact_match=True, verbose=False)
+    series = data[table][series_id].dropna()
+    series.index = pd.PeriodIndex(series.index, freq="Q-DEC")
+    return series, units, ORIGINAL
+
+
+def get_wage_index(measure: str = "WPI") -> tuple[Series, str, str]:
+    """Return a wage measure: "WPI" (SA quarterly index, 6345.0) or "AWOTE" (Original $/week, 6302.0)."""
+    if measure == "WPI":
+        series, units, stype = _wpi()
+    elif measure == "AWOTE":
+        series, units, stype = _awote()
+    else:
+        raise ValueError(f"Unknown wage measure {measure!r}: choose from ('WPI', 'AWOTE')")
     return series.copy(), units, stype

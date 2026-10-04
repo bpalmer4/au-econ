@@ -8,10 +8,47 @@ non-ABS notebook - FRED (Commodity Prices, Stagflation, GDP International), OECD
 petrol prices, DCCEEW (Petroleum Statistics, greenhouse gas `nggi`), ASIC, AFSA, Home
 Affairs visa workforce, Bonds (`bonds`, `rstar`), Yahoo (`energy`, `yahoo`, `asx`;
 stage one only) and RBA Selected Tables (`rba-rates` and `rba-bonds` stage one only;
-`rba-fx`, `rba-money`) with SOMP (`somp`). `uv run run.py --list` shows the 32 modules.
-Next: 6202 Labour Force, then 5206; the inflation topic module (CPI against other
-measures, the 6484 splices, Phillips curves, nominal GDP, misery index) waits for their
-unemployment, GDP and population getters.
+`rba-fx`, `rba-money`) with SOMP (`somp`). Done 2026-10-04, both stages: 6202 Labour
+Force (`lfs`, topic `jobs`), with `series.labour` (the long-run unemployment rate) and
+`series.population.smoothed_monthly_pop_growth`; its revisions charts (re-enabled now the
+modernised release has enough new-schema prints) and state growth charts are new. The
+World Bank savings glut module is now `wb-current-account`; the comparison scripts are
+in `tools/` (section 10). Also done 2026-10-04, both stages: the monthly charts of the
+ceased 6291.0.55.001 (final release March 2026), folded into `lfs` - age groups (6202
+Table 011), capital cities against the rest (LMS2) and country of birth (LMS4), the cubes
+read by `sources.abs.get_pivot_cube`. Its quarterly industry and occupation charts wait
+for those tables to resume in 6202 (September 2026 reference period, released late
+October 2026, occupation recoded to OSCA); its duration of job search charts are dropped,
+as the ABS no longer publishes them. The SDMX 6202 notebook's only unique charts (not in
+the labour force, underemployed, underutilisation rate) were added to `lfs`. Also done
+2026-10-04, both stages: 6354 Job Vacancies (`jv`) and 6150 Labour Account (`la`), both
+topic `jobs`; `asx` gained the topic `equities`. Shared: `charting/abs_rows.py` (one chart
+per metadata row) and statsmodels stubs for OLS. The 6354 industry vacancy rates (21
+images) wait for industry employment to return to 6202; the Labour Account releases too
+late to stand in. `ABS LFS - Household dynamics` (6291 FM2, relationship in household)
+is on hold: the ABS stopped publishing FM1-FM4 in April 2026, so it waits on what the
+modernisation brings back. Also done 2026-10-04, both stages: 6224 Labour Force Status of
+Families (`lfs-families`), topics `jobs` and the new `families` (which 3310 marriages and
+divorces and Domestic and Family Violence should join). Also done 2026-10-04, both
+stages: 3310 Marriages and Divorces (`marriages`, topic `families`), the notebook's one
+chart plus four new ones (divorces, crude rates, median age at marriage, marriage
+duration). Also done 2026-10-04, both stages: 6321 Industrial Disputes (`disputes`,
+topic `jobs`). Also done 2026-10-04, both stages: Domestic and Family Violence (`dfv`,
+topic `families`, in `topics/`), with `sources/aihw.py` for the AIHW family, domestic and
+sexual violence workbook (the AIHW renamed the NHMD rate unit in 2026, so it is matched by
+"per 100,000 population"). mgplot 0.3.4 (int accepted for float; no stray period before a
+short chart's data) is now in use. Also done 2026-10-04, both stages: `ABS Wages` as
+`wage-measures` (topic `wages`, in `topics/`), with new shared getters
+`series.prices.get_wage_index` (WPI, AWOTE) and `series.gdp.get_compensation_per_hour`;
+`series.gdp` now reads every 5206.0 table through one cached single-table reader (never the
+whole release), to be widened when 5206 is converted. Also done 2026-10-04: 6337 Earnings
+by Education (`earnings-education`, topic `wages`), in one stage, as the notebook's chart
+folder was empty: the numbers were checked and the conventions applied from the start.
+That completes the convertible jobs, families and wages notebooks; what remains there
+waits on the ABS (see above). `uv run run.py --list` shows the 41 modules.
+Next: 5206; the inflation topic module (CPI against other measures, the 6484 splices,
+Phillips curves, nominal GDP, misery index) then waits only for its GDP and population
+getters.
 Package: `au_econ` (project and GitHub repository `au-econ`).
 
 ## 0. Decisions
@@ -341,7 +378,7 @@ Third-party caches:
 
   | Notebook | What sdmxabs supplies | Replacement |
   |---|---|---|
-  | `ABS-SDMX-Monthly-Labour-Force-6202` | LF, LF_HOURS, LF_UNDER flows: headline, hours, underemployment | Same series are in the 6202.0 spreadsheets that `ABS Monthly Labour Force 6202` already reads. Notebook looks like an SDMX experiment duplicating it; not recreated, after checking no chart is unique to it |
+  | `ABS-SDMX-Monthly-Labour-Force-6202` | LF, LF_HOURS, LF_UNDER flows: headline, hours, underemployment | Same series are in the 6202.0 spreadsheets that `ABS Monthly Labour Force 6202` already reads. Notebook is an SDMX experiment duplicating it; not recreated. Checked 2026-10-04: its only unique charts (not in the labour force, underemployed total and its growth, underutilisation rate) were added to `lfs` from the spreadsheets (Tables 001 and X28) |
   | `ABS-SDMX-Monthly-Household-Spending-Indicator-5682` | HSI_M / HSI_Q flows; state ERP via `fetch_state_pop` | 5682.0 is already read by `readabs` in two notebooks (`ABS Monthly+Quarterly Household Spending`, `ABS Real Household Spending per Adult`); state ERP from `series.population`. Still to check: that the state-by-category monthly series are in the spreadsheets |
   | `ABS Inflation multi-measure` | The CPI `INDEX` codelist: parent links of group / sub-group / class (cached 14 days in `CACHE/ABS_cpi_hierarchy/`) | None: no spreadsheet equivalent. Stays on `sdmxabs.code_list_for("CPI", "INDEX")`, recreated in `sources/abs.py` |
 
@@ -565,6 +602,13 @@ A converted module passes only if it reproduces its notebook's charts:
 - A deliberate improvement (e.g. `rfooter=source` replacing a literal footer) is a
   second stage: first prove an exact match with the notebook's behaviour, then
   make the change and confirm the differing pixels are confined to where it shows.
+- The checks are in `tools/` (checked in, unlike the throwaway `scratch/`, which holds
+  only their snapshots): `compare_charts.py` compares two chart folders pixel by pixel
+  and gives the bounds of each difference; `footer_gaps.py` measures the gap between
+  the left and right footers and flags collisions; `pass.sh` runs one stage-two pass
+  (lint, snapshot to `scratch/prev`, rerun, compare); `old_palette.py` redraws a module
+  with mgplot's pre-2026-10-02 palette, for comparing against notebook charts drawn before
+  mgplot 0.3.3 changed its default colours.
 
 ## 11. CLAUDE.md changes (applied at the end, step "last")
 

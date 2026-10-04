@@ -1,4 +1,4 @@
-"""Global savings glut: current account balances of major economies (World Bank World Development Indicators).
+"""Global current account balances: major economies and the world (World Bank World Development Indicators).
 
 The "global savings glut" hypothesis (Bernanke 2005): excess saving over investment in key
 economies drove capital to deficit countries, depressing global interest rates.
@@ -17,9 +17,9 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 # --- module contract
-RELEASE = ("wb-savings-glut",)
+RELEASE = ("wb-current-account",)
 TOPICS = ("international",)
-TITLE = "Global Savings Glut"
+TITLE = "Global Current Account Balances"
 
 # --- constants
 COUNTRIES = {  # label: ISO3 code; G20 plus G10 members and Spain

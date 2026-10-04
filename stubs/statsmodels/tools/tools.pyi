@@ -1,0 +1,3 @@
+import pandas as pd
+
+def add_constant(data: pd.Series | pd.DataFrame, prepend: bool = ...) -> pd.DataFrame: ...

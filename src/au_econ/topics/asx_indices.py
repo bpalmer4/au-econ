@@ -7,7 +7,7 @@ from au_econ.charting.daily_prices import fetch_closes, frame_chart, last_day, s
 
 # --- module contract
 RELEASE = ("asx",)
-TOPICS = ()
+TOPICS = ("equities",)
 TITLE = "ASX Indices"
 
 # --- constants

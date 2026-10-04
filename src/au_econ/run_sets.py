@@ -10,8 +10,11 @@ RELEASE tuple instead, and are not listed here.
 TOPICS: dict[str, str] = {
     "commodities": "Commodity prices",
     "environment": "Emissions and the environment",
+    "equities": "Share markets and stock indices",
+    "families": "Families, households and relationships",
     "insolvency": "Corporate and personal insolvencies",
     "international": "International comparisons",
+    "jobs": "Employment, unemployment, hours and job vacancies",
     "migration": "Migration and population",
     "prices": "Prices and inflation",
     "rba": "Reserve Bank of Australia tables and forecasts",
