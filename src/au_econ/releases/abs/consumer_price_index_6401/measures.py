@@ -148,7 +148,7 @@ def _select(release: AbsRelease, spec: tuple[str, str, str], *, unit: str = "", 
     return series if last_valid is None else series.loc[:last_valid]
 
 
-def _monthly(series: pd.Series) -> pd.Series:
+def to_monthly(series: pd.Series) -> pd.Series:
     """Return a monthly series unchanged, or a quarterly one interpolated to months."""
     freq = series.index.freqstr[0] if isinstance(series.index, pd.PeriodIndex) else ""
     if freq == "M":
@@ -160,10 +160,10 @@ def _monthly(series: pd.Series) -> pd.Series:
 
 def _annual_growth(release: AbsRelease, specs: dict[str, tuple[str, str, str]]) -> dict[str, pd.Series]:
     """Return published year-on-year growth for each labelled measure, on a monthly axis."""
-    return {label: _monthly(_select(release, spec, year_on_year=True)) for label, spec in specs.items()}
+    return {label: to_monthly(_select(release, spec, year_on_year=True)) for label, spec in specs.items()}
 
 
-def _long_headline(release: AbsRelease) -> pd.Series:
+def long_headline(release: AbsRelease) -> pd.Series:
     """Return quarterly headline year-on-year growth back to 1949, compounded from quarterly change.
 
     Compounding the published quarterly change avoids the rounding steps that the early,
@@ -179,9 +179,9 @@ def _long_headline(release: AbsRelease) -> pd.Series:
 # --- charts
 def cpi_measures(release: AbsRelease) -> None:
     """Annual growth in the CPI measures, monthly and quarterly; full history and recent."""
-    long_headline = {LONG_HEADLINE: ra.qtly_to_monthly(_long_headline(release))}
+    long_run = {LONG_HEADLINE: ra.qtly_to_monthly(long_headline(release))}
     multi_start(
-        pd.DataFrame(long_headline | _annual_growth(release, MEASURES)),
+        pd.DataFrame(long_run | _annual_growth(release, MEASURES)),
         function=line_plot_finalise,
         starts=monthly_plot_times,
         title="Australian Consumer Price Index (CPI) Measures",

@@ -8,6 +8,7 @@ RELEASE tuple instead, and are not listed here.
 """
 
 TOPICS: dict[str, str] = {
+    "activity": "Output, demand and income: GDP and its components",
     "commodities": "Commodity prices",
     "environment": "Emissions and the environment",
     "equities": "Share markets and stock indices",
@@ -17,6 +18,7 @@ TOPICS: dict[str, str] = {
     "jobs": "Employment, unemployment, hours and job vacancies",
     "migration": "Migration and population",
     "prices": "Prices and inflation",
+    "productivity": "Labour, capital and multifactor productivity",
     "rba": "Reserve Bank of Australia tables and forecasts",
     "wages": "Wages, earnings and labour costs",
 }

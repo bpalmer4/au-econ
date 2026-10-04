@@ -45,10 +45,30 @@ whole release), to be widened when 5206 is converted. Also done 2026-10-04: 6337
 by Education (`earnings-education`, topic `wages`), in one stage, as the notebook's chart
 folder was empty: the numbers were checked and the conventions applied from the start.
 That completes the convertible jobs, families and wages notebooks; what remains there
-waits on the ABS (see above). `uv run run.py --list` shows the 41 modules.
-Next: 5206; the inflation topic module (CPI against other measures, the 6484 splices,
-Phillips curves, nominal GDP, misery index) then waits only for its GDP and population
-getters.
+waits on the ABS (see above). Also done 2026-10-04, both stages: 5206 National Accounts
+(`5206`, `gdp`; topics `activity` (new), `wages`, `prices`), a subpackage of 14 files and
+44 chart functions in `releases/abs/national_accounts_5206/`. Stage one matched all 755
+notebook charts pixel for pixel. Stage two: "Australia." lfooters with the series type,
+price measure and "Data to", source-only rfooters, the five-year quarterly window, mgplot
+line widths, colon titles (no trailing colons), and mgplot colours except where a colour
+has a purpose (the GDP-composition component colours are kept: they tie each component
+across the stacked, boxplot, benchmark and single-component charts). Shared
+additions: `series.population.get_state_erp` and a statsmodels `hpfilter` stub.
+`uv run run.py --list` shows the 42 modules.
+Also done 2026-10-04, both stages: the CPI wrap-up, at the user's direction as part of the
+CPI release rather than a topic module: `releases/abs/consumer_price_index_6401/related.py`,
+10 chart functions, the 30 remaining charts of `ABS Inflation multi-measure` (the 6484
+splices, CPI beside PPI/WPI/deflators, goods/services and tradeables, headline v trimmed
+mean, Phillips curves, nominal GDP per capita, misery index, CPI/rents/wages/income
+rebased). Stage one matched all 30; 6401 now draws 272 charts. `data_to` moved to
+`charting.footers`. That completes the inflation notebook.
+Also done 2026-10-04, both stages: the Modellers' Database (`1364`, `mdb`, new topic
+`productivity`; `releases/abs/modellers_database_1364/`, 18 chart functions, 60 charts), from
+the `ABS Quarterly National Accounts 5206 No 2` notebook. The notebook's 2 Oct chart folder
+lacked nine charts, so stage one used a fresh run of a scratch copy of the notebook: 60 of 60
+identical. The 1966 spliced GDP per hour worked index (RBA OP8 hours) now lives in the module.
+Next: the National Accounts partial indicators (5302, 5625, 5676, 8755, 5232), or the
+stage-two backlog (energy, yahoo, asx, rba-rates, rba-bonds, oecd, fred-gdp).
 Package: `au_econ` (project and GitHub repository `au-econ`).
 
 ## 0. Decisions

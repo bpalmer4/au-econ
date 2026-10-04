@@ -1,11 +1,11 @@
-"""Consumer Price Index, Australia (6401.0): the CPI measures, and later the expenditure classes.
+"""Consumer Price Index, Australia (6401.0): measures, expenditure classes and related series.
 
-Charts from 6401.0 data only. Anything combining the CPI with other releases (the
-discontinued monthly indicator 6484.0, PPI, WPI, deflators) is in a topic module.
+The related series bring in other releases: the discontinued monthly indicator 6484.0, PPI,
+WPI, deflators, unemployment, nominal GDP, rents, wages and household income.
 """
 
 # --- dependencies
-from au_econ.releases.abs.consumer_price_index_6401 import classes, measures
+from au_econ.releases.abs.consumer_price_index_6401 import classes, measures, related
 from au_econ.sources.abs import AbsRelease, fetch_release
 
 # --- module contract
@@ -24,4 +24,4 @@ def fetch() -> AbsRelease:
 
 
 # --- table of contents, in run order
-CHARTS = (*measures.CHARTS, *classes.CHARTS)
+CHARTS = (*measures.CHARTS, *classes.CHARTS, *related.CHARTS)

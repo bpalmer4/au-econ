@@ -23,21 +23,29 @@ MONTHS_PER_QUARTER = 3
 # --- Estimated Resident Population (3101.0): quarterly, persons
 ERP_CATALOGUE = "3101.0"
 ERP_TABLE = "310104"
-ERP_SELECTOR = {
-    ";  Australia ;": mc.did,  # the bare name would also match every state's "Australian"
-    "Estimated Resident Population ;  Persons ;  ": mc.did,
-}
+ERP_PERSONS = "Estimated Resident Population ;  Persons ;  "
+NATIONAL = "Australia"
 
 
 @cache
-def _erp() -> tuple[Series, str]:
-    """Fetch national ERP (cached; not for mutation)."""
+def _erp(state: str = NATIONAL) -> tuple[Series, str]:
+    """Fetch ERP for Australia or one state, by its full name (cached; not for mutation)."""
     data, meta = ra.read_abs_cat(ERP_CATALOGUE, single_excel_only=ERP_TABLE, verbose=False)
-    _, series_id, units = ra.find_abs_id(meta, ERP_SELECTOR, verbose=False)
+    selector = {
+        f";  {state} ;": mc.did,  # the bare name would also match every state's "Australian"
+        ERP_PERSONS: mc.did,
+    }
+    _, series_id, units = ra.find_abs_id(meta, selector, verbose=False)
     series = data[ERP_TABLE][series_id].dropna()
     if series.empty:
-        raise ValueError(f"ABS {ERP_CATALOGUE} returned no national ERP values")
+        raise ValueError(f"ABS {ERP_CATALOGUE} returned no ERP values for {state}")
     return series, units
+
+
+def get_state_erp(state: str) -> tuple[Series, str]:
+    """Estimated Resident Population of one state or territory, by its full name ("New South Wales")."""
+    series, units = _erp(state)
+    return series.copy(), units
 
 
 def get_erp(project_quarters: int = 0) -> tuple[Series, str]:

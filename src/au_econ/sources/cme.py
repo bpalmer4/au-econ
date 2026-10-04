@@ -19,7 +19,11 @@ NO_SETTLE = ("", "-")
 
 
 def get_settlement_curve(product_id: int) -> tuple[pd.Series, pd.Timestamp]:
-    """Return a product's latest settlement curve (contract month to price) and its trade date."""
+    """Return a product's latest settlement curve (contract month to price) and its trade date.
+
+    CME's servers do not always agree: a listed trade date can come back with no settled
+    prices, so the dates are tried newest first and the first with prices is used.
+    """
     session = cffi_requests.Session(impersonate=IMPERSONATE, curl_options={CurlOpt.CAINFO: certifi.where()})
     session.get(REFERER, timeout=TIMEOUT)
     headers = {"Referer": REFERER, "Accept": "application/json"}
@@ -29,8 +33,18 @@ def get_settlement_curve(product_id: int) -> tuple[pd.Series, pd.Timestamp]:
     trade_dates = dates.json()
     if not trade_dates:
         raise ValueError(f"CME product {product_id}: no trade dates available")
-    trade_date = trade_dates[0][0]  # [MM/DD/YYYY, report type] pairs, newest first
+    for entry in trade_dates:  # [MM/DD/YYYY, report type] pairs, newest first
+        trade_date = entry[0]
+        curve = _settlement_curve(session, headers, product_id, trade_date)
+        if not curve.empty:
+            return curve, pd.Timestamp(trade_date)
+    raise ValueError(f"CME product {product_id}: no settled prices on any listed trade date")
 
+
+def _settlement_curve(
+    session: cffi_requests.Session, headers: dict[str, str], product_id: int, trade_date: str
+) -> pd.Series:
+    """Return one trade date's settlement curve (contract month to price); empty if nothing settled."""
     settlements = session.get(
         f"{SETTLEMENTS_BASE}/Settlements/{product_id}/FUT",
         params={"strategy": "DEFAULT", "tradeDate": trade_date, "pageSize": PAGE_SIZE},
@@ -51,4 +65,4 @@ def get_settlement_curve(product_id: int) -> tuple[pd.Series, pd.Timestamp]:
         except ValueError, KeyError:
             continue
         records[period] = price
-    return pd.Series(records).sort_index(), pd.Timestamp(trade_date)
+    return pd.Series(records, dtype=float).sort_index()

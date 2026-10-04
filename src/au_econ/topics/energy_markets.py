@@ -157,6 +157,20 @@ def _last_day(frame: pd.DataFrame | pd.Series) -> str:
     return _period(frame.dropna(how="all").index[-1]).strftime("%-d-%b-%Y")
 
 
+def _as_of(dates: dict[str, pd.Timestamp]) -> str:
+    """Return the newest trade date, naming any series behind it, e.g. "2-Oct-2026; TTF (Europe) 1-Oct".
+
+    Each series that is behind is also reported in the log.
+    """
+    newest = max(dates.values())
+    text = newest.strftime("%-d-%b-%Y")
+    for label, date in dates.items():
+        if date < newest:
+            print(f"{label}: data to {date.strftime('%-d-%b-%Y')}, behind {text}")
+            text += f"; {label} {date.strftime('%-d-%b')}"
+    return text
+
+
 def _since_short_start[T: (pd.Series, pd.DataFrame)](data: T) -> T:
     """Keep data from SHORT_START."""
     return data.loc[data.index >= pd.Period(SHORT_START, freq="D")]
@@ -249,7 +263,7 @@ def _padded_limits(frame: pd.DataFrame, means: dict[str, float]) -> tuple[float,
     return low - pad, high + pad
 
 
-def _forward_curve_chart(frame: pd.DataFrame, as_of: pd.Timestamp, *, title: str, rfooter: str) -> None:
+def _forward_curve_chart(frame: pd.DataFrame, as_of: str, *, title: str, rfooter: str) -> None:
     """Chart a forward curve frame (each column one contract series), with 2025 means and contango flips."""
     # implied front-to-back change, averaged across the series
     changes = []
@@ -285,10 +299,7 @@ def _forward_curve_chart(frame: pd.DataFrame, as_of: pd.Timestamp, *, title: str
         axhline=_reference_lines(frame.columns, NORMAL_2025_MEAN),
         axvline=flips,
         ylim=_padded_limits(frame, NORMAL_2025_MEAN),
-        lfooter=(
-            "Latest settle price for each dated contract (delivery within month). "
-            f"As of {as_of.strftime('%-d-%b-%Y')}."
-        ),
+        lfooter=f"Latest settle per dated contract. As of {as_of}.",
         rfooter=rfooter,
     )
 
@@ -424,10 +435,9 @@ def crude_forward_curves(data: EnergyData) -> None:
             print(f"{label}: {len(curve)} of {N_FORWARD_MONTHS} consecutive monthly contracts listed on Yahoo")
     prices = pd.DataFrame({WTI: wti["price"], BRENT: brent["price"]})
     prices.index = pd.PeriodIndex(prices.index, freq="M")
-    as_of = max(wti["date"].max(), brent["date"].max())
     _forward_curve_chart(
         prices,
-        as_of,
+        _as_of({WTI: wti["date"].max(), BRENT: brent["date"].max()}),
         title="Crude Oil Forward Curves: WTI and Brent",
         rfooter="Source: Yahoo Finance (NYMEX CL, ICE BZ)",
     )
@@ -436,15 +446,15 @@ def crude_forward_curves(data: EnergyData) -> None:
 def singapore_forward_curves(data: EnergyData) -> None:
     """Singapore gasoil and Mogas 92 forward curves, from CME settlements."""
     columns: dict[str, pd.Series] = {}
-    dates: list[pd.Timestamp] = []
+    dates: dict[str, pd.Timestamp] = {}
     for label, product in CME_SINGAPORE_PRODUCTS.items():
         series, trade_date = data.cme_curves[product]
         columns[label] = series
-        dates.append(trade_date)
+        dates[label] = trade_date
     curves = pd.DataFrame(columns).sort_index()
     _forward_curve_chart(
         curves,
-        max(dates),
+        _as_of(dates),
         title="Singapore Refined Product Forward Curves: Gasoil and Petrol",
         rfooter="Source: CME Group (NYMEX SGB, N1B settlements)",
     )
@@ -617,7 +627,7 @@ def gas_forward_curves(data: EnergyData) -> None:
             JKM: jkm_usd.reindex(henry_hub.index),
         }
     )
-    as_of = max(henry_hub["date"].max(), ttf_date, jkm_date)
+    as_of = _as_of({HENRY_HUB: henry_hub["date"].max(), TTF: ttf_date, JKM: jkm_date})
     for column in gas.columns:
         valid = gas[column].dropna()
         print(
@@ -640,7 +650,7 @@ def gas_forward_curves(data: EnergyData) -> None:
         ylim=_padded_limits(gas, NORMAL_2025_MEAN_GAS),
         lheader="TTF converted EUR/MWh to USD/MMBtu at spot EUR/USD",
         rheader=f"Henry Hub seasonal range {hh.min():.2f} to {hh.max():.2f} USD/MMBtu",
-        lfooter=f"Dashed = 2025 mean. Latest settle per dated contract. As of {as_of.strftime('%-d-%b-%Y')}.",
+        lfooter=f"Dashed = 2025 mean. Latest settle per dated contract. As of {as_of}.",
         rfooter="Source: Yahoo Finance, CME Group",
     )
 

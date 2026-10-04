@@ -1,0 +1,3 @@
+import pandas as pd
+
+def hpfilter(x: pd.Series, lamb: float = 1600) -> tuple[pd.Series, pd.Series]: ...

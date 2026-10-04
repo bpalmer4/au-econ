@@ -22,6 +22,12 @@ Each run names its own chart folder: `CHARTS/<release> - <title>/`, or
 `CHARTS/<topic>/<release> - <title>/` for a topic. A full run first clears the images in
 the folder it fills; a `--charts` run clears nothing.
 
+One run is scheduled: a launchd job (`com.bryanpalmer.yahoo-commodities-update`) runs
+`yahoo-commodities-update.sh` every Sunday at 08:00, which runs `energy`, `yahoo` and `asx`
+in turn, so their charts land in `CHARTS/energy - Energy Markets/`,
+`CHARTS/yahoo - Commodity Futures/` and `CHARTS/asx - ASX Indices/`. Its output goes to
+`LOGS/`.
+
 Data come from the ABS, the RBA, the OECD, the BIS, FRED, the World Bank, DB.nomics,
 Yahoo Finance, OilPrice.com, the EIA, OPEC and CME, other central banks and debt offices,
 and Australian agencies (AIP, DCCEEW, ASIC, AFSA, Home Affairs, and the AIHW, whose family
@@ -37,7 +43,8 @@ against the notebook's charts, then improved. When everything has been rebuilt, 
 notebooks are deleted in one go. The design and the decisions behind it are in
 [docs/restructure-spec.md](docs/restructure-spec.md); chart conventions are in its
 section 11. The checks used along the way (pixel comparison of chart folders, footer
-collisions, one stage-two pass) are in `tools/`.
+collisions, one stage-two pass, and a redraw with mgplot's old palette for comparing against
+older notebook charts) are in `tools/`.
 
 ## Setup
 
