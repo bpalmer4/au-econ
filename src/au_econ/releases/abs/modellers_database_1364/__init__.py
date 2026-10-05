@@ -15,7 +15,7 @@ from au_econ.sources.abs import fetch_release
 
 # --- module contract
 RELEASE = ("1364", "mdb")
-TOPICS = ("productivity",)
+TOPICS = ("economy",)
 TITLE = "Modellers' Database"
 
 # --- constants

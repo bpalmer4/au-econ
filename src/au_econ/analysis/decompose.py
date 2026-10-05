@@ -113,6 +113,17 @@ def decompose(
     return result.loc[s.index]
 
 
+def seasonally_adjust(series: pd.Series) -> pd.Series:
+    """Return the seasonally adjusted component of a positive level series, named after its input.
+
+    Multiplicative, and ARIMA-extended so the ends are not smoothed against a truncated
+    window. Deflating an Original series by a price index leaves a seasonal residue, which
+    has to go before the result is rebased to a single period.
+    """
+    adjusted = decompose(series, model="multiplicative", arima_extend=True)[FINAL_SEASADJ].dropna()
+    return adjusted.rename(str(series.name))
+
+
 # --- private helpers
 def _period_index(index: pd.Index) -> pd.PeriodIndex:
     """Return the index as a PeriodIndex, or raise."""

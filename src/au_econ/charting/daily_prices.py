@@ -5,7 +5,7 @@ import pandas as pd
 
 from au_econ.sources import yahoo
 
-SOURCE_YAHOO = "Source: Yahoo Finance"
+SOURCE_YAHOO = "Yahoo"
 LEGEND = {"loc": "best", "fontsize": "x-small"}
 
 
@@ -28,13 +28,15 @@ def fetch_closes(tickers: list[str], start: str) -> dict[str, pd.Series]:
     return closes
 
 
-def single_chart(series: pd.Series, *, name: str, ylabel: str, is_futures: bool = True) -> None:
-    """Chart one ticker's close: a front-month futures price, or a daily close."""
+def single_chart(
+    series: pd.Series, *, name: str, ylabel: str, is_futures: bool = True, geography: str = ""
+) -> None:
+    """Chart one ticker's close: a front-month futures price, or a daily close; geography leads the lfooter."""
     data_to = last_day(series)
     title, footer = (
-        (f"{name} Futures Price", f"Front-month futures. Data to {data_to}.")
+        (f"{name} Futures Price", f"{geography}Front-month futures. Data to {data_to}.")
         if is_futures
-        else (name, f"Daily close. Data to {data_to}.")
+        else (name, f"{geography}Daily close. Data to {data_to}.")
     )
     mg.line_plot_finalise(
         series,
@@ -48,7 +50,11 @@ def single_chart(series: pd.Series, *, name: str, ylabel: str, is_futures: bool 
 
 
 def single_charts(
-    closes: dict[str, pd.Series], tickers: list[tuple[str, str, str]], *, is_futures: bool = True
+    closes: dict[str, pd.Series],
+    tickers: list[tuple[str, str, str]],
+    *,
+    is_futures: bool = True,
+    geography: str = "",
 ) -> None:
     """Chart each (ticker, name, ylabel) separately; a ticker without data is skipped."""
     for ticker, name, ylabel in tickers:
@@ -57,7 +63,7 @@ def single_charts(
             continue
         series = closes[ticker]
         print(f"{name}: {series.index[0]} to {series.index[-1]}  min={series.min():.2f}  max={series.max():.2f}")
-        single_chart(series, name=name, ylabel=ylabel, is_futures=is_futures)
+        single_chart(series, name=name, ylabel=ylabel, is_futures=is_futures, geography=geography)
 
 
 def frame_chart(frame: pd.DataFrame, *, title: str, ylabel: str, lfooter: str) -> None:

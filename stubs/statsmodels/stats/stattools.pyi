@@ -1,0 +1,3 @@
+import pandas as pd
+
+def durbin_watson(resids: pd.Series) -> float: ...

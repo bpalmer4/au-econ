@@ -1,8 +1,6 @@
-"""Shared pieces of the National Accounts module: tables, descriptions, windows and title clean-up."""
+"""Shared pieces of the National Accounts module: tables, descriptions and windows."""
 
 # --- dependencies
-from mgplot import abbreviate_state, state_names
-
 from au_econ.charting.footers import SERIES_TYPE_NOTES, data_to
 
 __all__ = ["data_to"]  # re-exported: the module's chart files take it from here
@@ -35,39 +33,3 @@ SA_NOTE = f"{SERIES_TYPE_NOTES[SEASONALLY_ADJUSTED]} "
 SA_SHORT = "Seas adj. "  # only where the full note would collide with the right footer
 ORIGINAL_NOTE = f"{SERIES_TYPE_NOTES[ORIGINAL]} "
 CVM_NOTE, CP_NOTE = "Chain volume measures. ", "Current prices. "
-
-
-# --- title clean-up
-TITLE_MEASURES = (  # removed from titles and noted in the footer instead
-    "Chain volume measures",
-    "Chain Volume Measures",
-    "Chain Volume Measure",
-    "Current prices",
-    "Current Prices",
-    "Current Price",
-    "Total (State)",
-    "Total (Industry)",
-    "CORP",
-    "TOTAL (SCP_SCOPE)",
-)
-
-
-def fix_abs_title(title: str, lfooter: str) -> tuple[str, str]:
-    """Simplify an ABS data item description for a title, moving its price measure to the footer."""
-    for measure in TITLE_MEASURES:
-        if measure in title:
-            title = title.replace(f"{measure} ;", "")
-            lfooter += f"{measure}. "
-    for state in state_names:
-        title = title.replace(state, abbreviate_state(state))
-    title = (
-        title.replace(";", "")
-        .replace(" - ", " ")
-        .replace("    ", " ")
-        .replace("   ", " ")
-        .replace("  ", " ")
-        .strip()
-        .removesuffix(":")  # left behind when the price measure was the last part
-        .strip()
-    )
-    return title, lfooter

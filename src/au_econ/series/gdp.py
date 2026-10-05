@@ -56,6 +56,12 @@ def get_gdp(measure: str = "CP", series_type: str = "SA") -> tuple[Series, str]:
     return series.copy(), units
 
 
+def get_table(table: str) -> tuple[dict[str, DataFrame], DataFrame]:
+    """Return one 5206.0 table (e.g. "5206002_Expenditure_Volume_Measures") and its metadata, as copies."""
+    data, meta = _table(table)
+    return {name: frame.copy() for name, frame in data.items()}, meta.copy()
+
+
 @cache
 def _compensation_per_hour() -> tuple[Series, str]:
     """Fetch compensation of employees per hour (cached; not for mutation)."""

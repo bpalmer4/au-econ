@@ -9,16 +9,19 @@ import re
 from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Unpack
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin
 
 import pandas as pd
 import readabs as ra
 import requests
 import sdmxabs as sa
+from readabs.get_abs_links import get_abs_links
 
 from au_econ.sources.http_cache import get_file
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pandas import DataFrame
     from readabs import ReadArgs
 
@@ -74,6 +77,18 @@ def latest_data_cube_url(release_page: str, cube: str) -> str:
 def get_data_cube(url: str) -> bytes:
     """Return an ABS data cube workbook (not a time-series table, so not readabs), cached on disk."""
     return get_file(url, prefix="abs")
+
+
+def landing_page_workbook(page: str, matches: Callable[[str], bool]) -> bytes:
+    """Return the first .xlsx linked from an ABS page whose file name (URL-decoded) matches, cached on disk.
+
+    Finding the file from the page keeps working as the ABS moves files into new dated folders.
+    """
+    links = get_abs_links(page).get(".xlsx", [])
+    url = next((link for link in links if matches(unquote(link.rsplit("/", 1)[-1]))), None)
+    if url is None:
+        raise ValueError(f"ABS: no matching workbook at {page}")
+    return get_data_cube(url)
 
 
 @cache

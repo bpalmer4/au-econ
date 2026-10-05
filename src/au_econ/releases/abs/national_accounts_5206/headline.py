@@ -22,6 +22,7 @@ from readabs import metacol as mc
 
 from au_econ.analysis.henderson import hma
 from au_econ.charting.footers import SERIES_TYPE_NOTES
+from au_econ.charting.titles import fix_abs_title
 from au_econ.charting.windows import quarterly_plot_times
 from au_econ.releases.abs.national_accounts_5206.common import (
     ANALYTICAL,
@@ -50,7 +51,6 @@ from au_econ.releases.abs.national_accounts_5206.common import (
     SFD_SUMMARY,
     TAXES,
     data_to,
-    fix_abs_title,
 )
 from au_econ.series.gdp import get_gdp
 from au_econ.series.population import get_state_erp

@@ -25,14 +25,13 @@ TOPICS = ("rba",)
 TITLE = "Australian Bond Yields"
 
 # --- constants
-SOURCE = "Source: RBA"
-YIELDS_TITLE = "Capital Market Yields - Australian Government Bonds"
+SOURCE = "RBA:"  # followed by the table(s), e.g. "RBA: F1, F2"
+YIELDS_TITLE = "Capital Market Yields: Australian Government Bonds"
 RECENT_DAYS = -100  # the yield chart's window; the full-history version shared its file name and was overwritten
 inversion_starts = 0, -150
 INVERSION_PAIRS = ((2, 3), (2, 5), (2, 10))  # (shorter, longer) bond tenors in years
 BOND_TITLE_WORDS = "Australian|Commonwealth"
 BOND_TITLE_PREFIXES = ("Australian Government ", "Commonwealth Government ")
-YIELD_WIDTH = 1.5
 
 # RBA series IDs
 RBA_SERIES = {
@@ -146,11 +145,10 @@ def yield_curve(data: BondData) -> None:
         yields,
         plot_from=RECENT_DAYS,
         tag="F2-Daily",
-        width=YIELD_WIDTH,
         drawstyle="steps-post",
         title=YIELDS_TITLE,
         ylabel="Per cent per annum",
-        rfooter=f"{SOURCE} F2 Daily",
+        rfooter=f"{SOURCE} F2",
         lfooter=f"Australian Government Bonds. Data up to {yields.index[-1]}. ",
         pre_tag="f2-",
         annotate=True,
@@ -170,8 +168,8 @@ def yield_inversions(data: BondData) -> None:
             starts=inversion_starts,
             title=f"Capital Market Yield Inversions [({long}-year - {short}-year) * -1]",
             ylabel="% points difference",
-            rfooter=f"{SOURCE} F2 Daily",
-            lfooter=f"Australian Government Bonds. Data up to {last}. ",
+            rfooter=f"{SOURCE} F2",
+            lfooter=f"Australia. Government bonds. Data up to {last}. ",
             pre_tag="f2-",
         )
 
@@ -185,12 +183,11 @@ def long_run_ten_year(data: BondData) -> None:
     ten_year = pd.to_numeric(combined[TEN_YEAR_DAILY], errors="coerce")
     mg.line_plot_finalise(
         ten_year,
-        width=1,
         annotate=True,
         rounding=2,
         title="10 Year Australian Government Bond Yields",
         ylabel="Per cent per annum",
-        rfooter=f"{SOURCE} F2 Daily",
+        rfooter=f"{SOURCE} F2",
         lfooter=f"Australian Government Bonds. Data up to {combined.index[-1]}. ",
     )
 
@@ -214,7 +211,6 @@ def term_spread(data: BondData) -> None:
     spread, _ = ra.splice([daily, monthly], rebase=False, name="Term spread")
     mg.line_plot_finalise(
         spread,
-        width=1,
         annotate=True,
         rounding=2,
         y0=True,
@@ -246,7 +242,7 @@ def gdp_growth_vs_bond_yield(data: BondData) -> None:
         title="Nominal GDP growth vs the 10-year bond yield",
         ylabel="Per cent per year",
         legend=True,
-        rfooter="Source: ABS 5206.0, RBA F2.1",
+        rfooter=f"ABS: {GDP_CATALOGUE}; {SOURCE} F2.1",
         lfooter=(
             "Australia. GDP current prices, seasonally adjusted; per capita original. "
             "Since bond tenders began in Aug-1982. "

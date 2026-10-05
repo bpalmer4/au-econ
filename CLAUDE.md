@@ -1,49 +1,77 @@
 # Claude Code Project Configuration
 
 ## Project Overview
-This project contains Python Jupyter notebooks that analyze and visualize economic data from:
-- Australian Bureau of Statistics (ABS)
-- Reserve Bank of Australia (RBA)
-- OECD and BIS
+Charts of Australian economic and social statistics, from the latest data published by the
+ABS, the RBA and other sources (OECD, BIS, FRED, World Bank, DB.nomics, Yahoo, EIA, and
+Australian agencies). The charts come from the Python package `src/au_econ/`, run with
+`uv run run.py <name>`. The design, its decisions and the conversion record are in
+`docs/restructure-spec.md`.
 
-The notebooks fetch the latest data and generate charts for key social and economic statistics.
-
-## The au_econ package (rebuild in progress)
-- The project is being rebuilt as `src/au_econ/`, run with `uv run run.py <run set>`.
-  Spec, decisions and status: `docs/restructure-spec.md`. Chart conventions for the
-  package (footers, series-type wording, standard windows, colours, widths) are in its
-  section 11; shared pieces live in `src/au_econ/charting/`.
-- The notebooks are the frozen old world: never move, trim, edit or repoint anything in
-  `notebooks/` as part of the rebuild. Recreate in `src/`; the old world is deleted in
-  one go at the end.
-- Each conversion: settle release names, topics and chart functions with the user; stage
-  one is an exact pixel match against the notebook's charts; stage two applies the
-  conventions one pass at a time, each with a predicted pixel footprint.
-- The notebook rules below still govern notebooks; they are rewritten for the package
-  at the end of the rebuild.
-
-## Project Structure
-- `/notebooks/` - Contains all Jupyter notebooks for data analysis
-- `/notebooks/CHARTS/<topic>/` - Output directories for generated charts (set per-notebook via `mg.set_chart_dir()`; nothing writes to a top-level `/charts/`)
-- Project uses Python with data analysis libraries
+## Running
+```bash
+uv run run.py --list            # every module, with its release names and topics
+uv run run.py cpi               # one module, by release name or catalogue number (6401)
+uv run run.py economy           # a topic: every module in it
+uv run run.py somp --list       # the charts in a module
+uv run run.py rba-fx --charts long_run_exchange_rates   # selected charts only
+uv run run.py --topics          # the topic words
+uv run run.py --all             # everything
+uv run run.py --all --check     # test run into scratch/check/; CHARTS/ untouched
+```
+Each module writes to `CHARTS/<first release name> - <TITLE>/`. A full run of a module
+clears its folder only after `fetch()` succeeds, so an unreachable source keeps the old
+charts; a `--charts` run clears nothing. API keys live in `KEYS/`, downloads are cached in
+`CACHE/` (both gitignored). The user-facing guides are `README.md` (how-to) and
+`docs/how-it-works.md` (explainer); keep them in step with any change to the runner or the
+conventions.
 
 ## Development Setup
-- Python environment managed with uv
-- Virtual environment in `.venv/`
-- Designed to work on iPad using the carnets app
+- Python environment managed with uv (`uv sync`); virtual environment in `.venv/`.
+- Lint and type checks: `uv run ruff check`, `uv run ruff format`, `uv run mypy src/au_econ`.
 
-## Key Commands
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Run a notebook
-jupyter notebook notebooks/<notebook-name>.ipynb
+## Package layout and layers
 ```
+src/au_econ/
+  paths.py  runner.py  run_sets.py (topics)  variables.py (short names for --charts)
+  sources/    one file per provider: fetching, caching, parsing; no combining
+  series/     economic concepts wanted by more than one module (cached getters)
+  analysis/   transforms: decompose, henderson, government epochs
+  charting/   mgplot helpers: footers, windows, titles, targets, backplane, epochs
+  releases/   one module (or subpackage) per publication, e.g. releases/abs/
+  topics/     chart sets that combine publications or providers
+```
+Imports point down only: `releases`/`topics` → `charting`, `series` → `analysis`,
+`sources`. `analysis` imports no first-party code; `sources` only `paths` and
+`http_cache`; releases and topics never import each other. Logic shared by two modules
+moves down to `series/` or `charting/`. A calculation that combines providers lives in
+`series/`, in a function named for what the result means. Chart modules never call
+`requests.get` or read a URL themselves: that belongs in `sources/`.
+
+## Chart modules
+Fixed section order, marked by comments: docstring, `# --- dependencies`,
+`# --- module contract`, `# --- constants`, `# --- data`, `# --- charts`,
+`# --- table of contents, in run order`.
+- `RELEASE`: tuple of lowercase names, release number first (`("6202", "lfs")`); a topic
+  module has just its run name (`("recessions",)`). Names are unique across modules.
+- `TOPICS`: words from `run_sets.TOPICS`; a new word is added there, with its meaning,
+  the first time a module uses it.
+- `TITLE`: short readable name; the chart folder is `<first release name> - <TITLE>`.
+- `fetch()`: no arguments; returns what every chart function receives (`AbsRelease` for
+  ABS releases, a frozen dataclass when the module parses its own data). Validates what it
+  fetched. Importing a module must never fetch.
+- Chart functions take the `fetch()` result and return `None`; they are named for their
+  subject (`unemployment`, not `plot_unemployment`); they raise on failure.
+- `CHARTS = ((function, extra_short_names), ...)`. The second element is short names for
+  `--charts`, never arguments.
+- Large modules become a subpackage: `__init__.py` holds the contract and gathers
+  `CHARTS`; each file holds chart functions and its own `CHARTS`; shared pieces go in
+  `common.py`, which must not define `fetch` (the runner would treat it as a module).
+- File names: `<short_name>_<catalogue>.py` (`labour_force_6202.py`).
+- No `SHOW`, no `show=`.
 
 ## Coding practice
 
-- Think Before Coding: Don’t assume. Don’t hide confusion. Surface tradeoffs.
+- Think Before Coding: Don't assume. Don't hide confusion. Surface tradeoffs.
 - Simplicity First: Minimum code that solves the problem. Nothing speculative.
 - Surgical Changes: Touch only what you must. Clean up only your own mess.
 - Goal-Driven Execution: Define success criteria. Loop until verified.
@@ -58,111 +86,96 @@ jupyter notebook notebooks/<notebook-name>.ipynb
   is yours, so check it against the whole file - Data Handling and Charting included -
   not just the rules that prompted the refactor. Narrow framing is how conventions
   outside the current task get missed.
+- **Functions, not classes**: a class only where it is plainly the obvious model (a frozen
+  dataclass holding fetched data is). Data passes as arguments; no module-level state
+  beyond constants.
+- **No magic numbers**: named UPPER_CASE constants. The chart window names
+  (`plot_times`, `quarterly_plot_times`, `monthly_plot_times`) stay lowercase.
+- **No duplicate code**: two functions that differ only in their series and title are one
+  function with arguments; logic used by two modules moves to `series/` or `charting/`.
+- **Small private helpers** (leading underscore) sit above the chart functions that use them.
+- **Cached getters**: a `series/` getter caches a private `@functools.cache` function and
+  returns a copy, so a caller cannot corrupt the cache.
+- **Diagnostic prints** that report data state to the reader (splice reports, recency,
+  "latest ...") are deliberate and stay.
+- **Docstrings say what the code does now**; never narrate a change.
 
+## Data Handling
+- **Series by label, never by ID in code**: ABS series are selected by description
+  (`find_abs_id` / `select` / `search_abs_meta` with `metacol` selectors) - never store an
+  ABS series ID, not even in a table. Providers whose APIs select only by ID (FRED,
+  DB.nomics, OECD, RBA, EIA) keep their IDs in one `{label: ID}` table per module, and code
+  reaches an ID only through its label.
+- **Never launder an existing hardcoded ID**: resolve it by description or leave the line
+  byte-for-byte as found. Do not promote it to a constant, rename, relocate or comment it.
+- **Recalibrate units before plotting**: `ra.recalibrate()` for human-readable units; fix
+  big-number labels there, not in plot formatting.
+- **Validate fetched data**: check for empty frames or unexpected nulls inside the fetch
+  function, next to the fetch it guards.
+- **COVID year exclusion in decomposition**: `ignore_years=(2020, 2021)` when seasonal
+  estimates would be distorted.
+- **Splicing**: `ra.select` / `ra.splice` (see the readabs reference below); `rebase=True`
+  only for ratio-scale indexes; audit the splice report.
+- **readabs exceptions**: readabs raises its own `HttpError` and `CacheError`
+  (`readabs.download_cache`), which are not `OSError`.
 
-## Notebook Hygiene
+## Charting conventions
+- **mgplot only**: never pandas `.plot()`. Prefer `*_finalise` functions; layer with
+  `ax=` and close with `finalise_plot()` for composite charts.
+- **Left footer**: starts "Australia. " (state charts too: the state is in the title),
+  then the series type in standard wording from `charting.footers.SERIES_TYPE_NOTES`
+  ("Original series.", "Seasonally adjusted.", "Trend."), then "Chain volume measures." or
+  "Current prices." where it applies, then other notes, appended on the right. An SA
+  against trend chart needs no series-type note.
+- **Right footer**: the source only, no table numbers, no closing full stop. One prefix per
+  provider, catalogues sorted, providers separated by semicolons, ABS first:
+  `ABS: 6345.0, 6401.0; RBA: F1`. "Census" (and similar non-catalogue sources) last.
+- **Acronyms**: define an acronym in the lfooter only when it appears in the title.
+- **Titles**: colons, never " - " or em dashes.
+- **Footer collisions**: check grown footers with `tools/footer_gaps.py`; shorten notes
+  ("seas adj", "orig" are fine when tight) rather than let them collide.
+- **Windows**: quarterly recent window `charting.windows.quarterly_plot_times` (five
+  years); `monthly_plot_times` (18 months) for monthly annotated bar-and-line charts;
+  monthly line charts keep their own windows. Never pass a literal to `starts=`.
+- **Line widths**: left to mgplot (2.0 up to 151 points, 1.0 beyond). `width=` only to
+  give the lines of one chart different widths, to highlight one.
+- **Colours**: mgplot defaults. Purposeful ties (a series keeping one colour across charts)
+  come from `mgplot.utilities.get_color_list`. State colours, party colours,
+  Males cornflowerblue / Females hotpink, and gradients are kept.
+- **Units on dollar flows**: "/Quarter" (or per month) on flow y-axes.
+- **Showing a chart** to the user means `open` on the PNG.
 
-### Structure and Layout
-- **Imports at the top**: All imports in the first code cell(s), grouped and commented:
-  stdlib, then third-party (`pandas`, `readabs`), then local (`abs_helper`, `mgplot`).
-  Never inline imports inside functions or plotting cells.
-- **Pandas display settings after imports**: `pd.options.display.max_rows = 999999` etc.
-  in the setup cell.
-- **Constants after imports**: Define `SHOW = False`, `plot_times`, `FILE_TYPE`, and other
-  configuration in a dedicated cell after imports, before function definitions.
-- **Function definitions before use**: Define all plotting/analysis functions before the
-  cells that call them.
-- **Markdown cells as section headers**: Use markdown to delineate sections
-  (Setup, Data Fetch, Plotting, etc.).
-- **One responsibility per cell**: Each cell does one thing: fetch data, transform, or
-  plot. If describing the cell needs the word "and", split it.
-- **Watermark cell at the end**: Use `%watermark` to record Python version, package versions,
-  and timestamp.
+## Verifying changes
+- A chart change is verified by pixel comparison, with a predicted footprint stated first
+  (which charts, which part: title band, footer strip, plot area):
+  `tools/pass.sh <module path> <run name> "<chart folder under CHARTS/>"` lints, snapshots
+  the folder to `scratch/prev`, reruns and reports the changed regions.
+- `tools/compare_charts.py <dir a> <dir b>` compares two chart folders;
+  `tools/footer_gaps.py <dir>` reports footer clearances.
+- A refactor that should change nothing is verified as "N of N identical".
+- `scratch/` is gitignored throwaway.
 
-### Coding Conventions
-- Each notebook should be self-contained
-- Fetch latest data when run
-- Output charts to the notebook's `CHARTS/<topic>/` directory (never a top-level `charts/`)
-- Use descriptive names for notebooks indicating the data source and series
+## Shared getters and helpers (`series/`, `analysis/`, `charting/`)
+Every getter is cached for the run and returns copies. Most return `(series, units)` or
+`(series, units, series_type)`.
 
-### Code Quality
-- **Write the function first**: A new code cell starts as `def thing() -> None:` with the
-  call at the bottom of the same cell. Never write computation at the top level intending
-  to wrap it up later - that intention is how every bit of loose code in this repo got
-  here. Explore inside the function body from the first line.
-- **Logic in functions, not module level**: Module-level code is limited to imports,
-  constants, data fetching, function definitions, and function calls. Constants are
-  UPPER_CASE, with one standing exception: the chart time-range names (`plot_times`,
-  `line_starts`, `bar_starts`) stay lowercase, per the naming convention below.
-  Do not "fix" those to upper case.
-  Everything else - arithmetic, reshaping, index mutation, `df["col"] = ...`, loops,
-  `if`/`assert` blocks - goes inside a function.
-- **No cross-cell variables**: A cell must not read a name that another cell created,
-  apart from the shared fetch results (`abs_dict`, `meta`, `source`, `RECENT`) and
-  module-level constants. If a function needs a series it fetches it, derives it, or
-  takes it as an argument. Cells that inherit their neighbours' leftovers keep working
-  by luck and break silently when anything is run out of order.
-- **A rendered chart is not the stopping point**: Encapsulation is part of finishing the
-  cell, not a cleanup pass afterwards. There is no afterwards.
-- **No magic numbers**: Use named constants or function parameters, not bare literals.
-- **No duplicate code across cells**: If you repeat logic, extract it to a function.
-  Two cells that differ only in their series IDs and chart title are one function with
-  arguments.
-- **Consistent variable names across notebooks**: `abs_dict` for the data dictionary,
-  `meta` for metadata, `source` for footer attribution, `RECENT` for the latest date,
-  `plot_times` for chart time ranges, `table` for table identifiers, `series_id`/`sid`
-  for series IDs, `units` for unit strings.
+| Module | Getters / helpers |
+|---|---|
+| `series.gdp` | `get_gdp(measure="CP"\|"CVM", series_type="SA"\|"T"\|"O")`, `get_table(table)` (any 5206 table), `get_compensation_per_hour` |
+| `series.prices` | `get_cpi("headline"\|"headline_sa"\|"trimmed"\|"weighted")`, `get_monthly_cpi` (+ splice report), `get_living_cost_index`, `get_wage_index("WPI"\|"AWOTE")`, `get_price_deflator("DFD"\|"GNE"\|"HFCE"\|"GDP")` |
+| `series.population` | `get_erp`, `get_state_erp`, `get_implicit_population`, `get_civ15(state)`, `get_adult21`, `get_adult21_monthly`, `smoothed_monthly_pop_growth`, `interp_21_share`, `interp_civ15_to_total`, `erp_age_sum` |
+| `series.nom` | `get_nom`, `get_nom_forward_proxy`, `get_population_growth_proxy` |
+| `series.labour` | `get_unemployment_rate` (spliced to 1950, + splice report and backcast stats) |
+| `series.productivity` | `get_productivity_index` (GDP per hour worked to 1966, + splice report) |
+| `series.housing` | `get_house_price_index(extend_bis=, real=, seasonally_adjusted=)`, splice report |
+| `series.rates` | `get_cash_rate`, `get_daily_cash_rate`, `get_interbank_rate`, `get_aud_usd` |
+| `analysis` | `decompose.decompose`, `decompose.seasonally_adjust`, `henderson.hma`, `epochs` (government table and by-government measures) |
+| `charting` | `footers` (`SERIES_TYPE_NOTES`, `data_to`), `windows`, `titles.fix_abs_title`, `targets` (CPI target markers), `inflation_backplane`, `epochs.epoch_vlines`, `international`, `daily_prices`, `abs_rows` |
+| `sources.abs` | `fetch_release(cat)` → `AbsRelease`, `get_pivot_cube`, `landing_page_workbook`; `sources.abs_workbook` parses the Excel-only GFS/taxation layout |
 
-### Data Handling
-- **Metadata-driven series selection**: Use `find_abs_id()` with `metacol` selectors
-  rather than hardcoding series IDs, which change over time.
-- **Constants hold descriptions, never series IDs**: A named constant may hold a data
-  item description (`LA_LABOUR_FORCE_DID = "Persons; Labour Account labour force ;..."`),
-  a table name or a catalogue number. It must never hold a series ID. If you are about
-  to type `SOMETHING_ID = "A84423047L"`, stop and resolve it by description instead.
-- **Never launder an existing hardcoded ID**: If you touch a line containing a hardcoded
-  series ID, you have exactly two options - resolve it by description, or leave the line
-  byte-for-byte as you found it. Do not promote it to a constant, rename it, relocate it
-  or add a comment to it. Tidying an ID makes it look considered and stops anyone
-  revisiting it.
-- **Recalibrate units before plotting**: Call `ra.recalibrate()` to get human-readable units.
-- **`abs_helper.get_abs_data()` called once only**: It resets the chart directory. Use
-  `abs_structured_capture` or `ra.read_abs_cat()` for additional data within a notebook.
-- **Validate fetched data**: Check for empty DataFrames or unexpected nulls before
-  plotting. The check belongs inside the fetch function, next to the fetch it guards -
-  never as a bare `assert` at cell level.
-- **COVID year exclusion in decomposition**: Use `ignore_years=(2020, 2021)` when doing
-  seasonal decomposition to avoid distortion.
-
-### Charting
-- **`SHOW = False` constant**: Define at module level, pass to all plot functions. Enables
-  batch execution without chart display.
-- **`plot_times` convention**: Define `plot_times = 0, -N` (or `0, RECENT`) for use with
-  `multi_start()` to generate full-history and recent-period chart variants. Never pass a
-  literal to `starts=` - not `starts=[0, -61]`, not `starts=(0, -20)`. If a chart needs a
-  different window from the notebook default, give that window its own named constant.
-- **`multi_start()` for paired charts**: Standard pattern to produce both a full-history
-  and a recent-period chart for each concept.
-- **Every chart needs source attribution**: `rfooter=source` for the data source,
-  `lfooter` for geography and series type (e.g., `"Australia. Seasonally Adjusted."`).
-  No `*_finalise` or `multi_start` call ships without both. `lfooter` starts with the
-  geography and appends new content on the right.
-- **Consistent title style**: Use colons, not em dashes, in chart titles.
-
-### Reproducibility
-- **Restart and Run All before finishing**: Notebooks must execute cleanly top-to-bottom
-  with no out-of-order cell dependencies. Verify this, never assume it:
-  `jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=1800
-  "notebooks/<name>.ipynb"`. Without `--allow-errors` it writes the file back only on
-  success, so a failed run leaves the notebook untouched. An edit is not finished until
-  this has passed, and editing after a passing run means running it again.
-- **No leftover debug or commented-out code**: Remove temporary cells, dead assignments
-  and commented-out code. `print()` calls that report data state to the reader are
-  deliberate and stay - `T201` is ignored in `pyproject.toml` for exactly that reason.
-
-## Notes
-- Modified notebooks are currently uncommitted (check git status)
-- Main branch is 'main'
+## The old world (`notebooks/`)
+The Jupyter notebooks the package replaced are frozen: never move, edit, trim or repoint
+anything in `notebooks/`. They are deleted in one go when the rebuild is signed off.
 
 ## readabs Package Reference
 
@@ -175,14 +188,10 @@ from readabs import metacol as mc
 
 # ALWAYS use single_excel_only to fetch just one table (much faster)
 data, meta = ra.read_abs_cat("6401.0", single_excel_only="64010Appendix1a")
-
-# DON'T fetch entire catalog unless needed
-# data, meta = ra.read_abs_cat("6401.0")  # Downloads everything - slow!
 ```
 
 ### Finding Series by Description (robust to ID changes)
 ```python
-# Use find_abs_id with metacol for robust series selection
 _, series_id, _ = ra.find_abs_id(meta, {
     "64010Appendix1a": mc.table,
     "Index Numbers": mc.did,
@@ -199,11 +208,6 @@ series = data["64010Appendix1a"][series_id]
 - `mc.unit` - Unit (Percent, Number, etc.)
 - `mc.freq` - Frequency (Monthly, Quarterly)
 
-### abs_helper.get_abs_data() Warning
-The `get_abs_data()` function in `abs_helper.py` calls `set_chart_dir()` and `clear_chart_dir()`.
-**Do not call it multiple times** - it will reset the chart directory. Use `ra.read_abs_cat()`
-with `single_excel_only` instead when fetching additional data within a notebook.
-
 ### Key ABS Tables
 - CPI Quarterly (Appendix): `64010Appendix1a` in catalog `6401.0`
 - CPI Monthly: `640106` in catalog `6401.0`
@@ -213,10 +217,9 @@ with `single_excel_only` instead when fetching additional data within a notebook
 
 ### Splicing Mixed-Frequency / Multi-Vintage Series (`select` + `splice`)
 
-For a concept spread across frequencies/releases (e.g. monthly CPI back to 2017,
-quarterly back to 1948, plus a discontinued indicator covering the gap), use the
-four composable splice functions. **Highest priority first**: the first segment
-wins on overlap; gaps are left honest (no interpolation unless asked).
+For a concept spread across frequencies/releases, use the four composable splice
+functions. **Highest priority first**: the first segment wins on overlap; gaps are left
+honest (no interpolation unless asked).
 
 | Function | Role |
 |----------|------|
@@ -225,77 +228,38 @@ wins on overlap; gaps are left honest (no interpolation unless asked).
 | `splice(segments, *, target=None, rebase=False, agg="mean", output=None, fill=None, name=None)` | Splice ordered series → `(series, report)` |
 | `select_and_splice(sources, *, ...same splice kwargs..., require_same_units=True)` | `select` then `splice` (no-transform case) → `(series, unit, report)` |
 
-- A *selector* is the `{search_value: column}` form used by `find_abs_id`
-  (`validate_unique=True` → de-dupes on Series ID, raises on real ambiguity).
-- Common pattern: a shared `base` selector + per-source frequency override, e.g.
-  `base | {"Quarter": mc.freq}` vs `base | {"Month": mc.freq}`.
-- **`rebase`** (default `False`): multiplicatively rescales lower-priority
-  segments onto the running result's level. ONLY for **ratio-scale / index-like**
-  series across reference-period changes (CPI index). WRONG for rates, balances,
-  zero-crossing or additive series — leave it off and splice the comparable
-  values (e.g. compute Y/Y growth per source, then `splice(..., rebase=False)`).
-- `target` = common grid freq (defaults to finest present); `output` = optional
-  final resample freq; `agg="mean"` for levels, `"sum"` for flows; `fill` is
-  `None`/`"ffill"`/`"interpolate"`.
-- The returned `report` DataFrame logs every rebase factor and overlap junction —
-  audit it rather than trusting the splice blindly.
-
-```python
-# No transform — splice index levels across reference-period changes (rebase=True):
-base = {"Index Numbers ;  All groups CPI ;  Australia ;": mc.did, "Index Numbers": mc.unit}
-series, unit, report = ra.select_and_splice([
-    (cur, cmeta, base | {"Month": mc.freq}),     # new monthly CPI
-    (ind, imeta, base | {"Month": mc.freq}),     # discontinued indicator
-    (cur, cmeta, base | {"Quarter": mc.freq}),   # long quarterly back to 1948
-], output="M", rebase=True)
-
-# With a transform — select, transform each, splice the rates (rebase=False):
-m_idx, i_idx, q_idx = ra.select([...])
-yoy = lambda s, n: ((s / s.shift(n) - 1) * 100).dropna()
-long_yoy, report = ra.splice([yoy(m_idx, 12), yoy(i_idx, 12), yoy(q_idx, 4)], rebase=False)
-
-# Mixed units on purpose (build a rate from counts, splice under the published rate):
-unemployed, labour_force, ur_monthly = ra.select([...], require_same_units=False)
-ur, report = ra.splice([ur_monthly, unemployed / labour_force * 100], rebase=False)
-```
+- A *selector* is the `{search_value: column}` form used by `find_abs_id`.
+- **`rebase`** (default `False`): multiplicatively rescales lower-priority segments onto the
+  running result's level. ONLY for **ratio-scale / index-like** series across
+  reference-period changes. WRONG for rates, balances, zero-crossing or additive series -
+  splice the comparable values instead (e.g. Y/Y growth per source, `rebase=False`).
+- `target` = common grid freq; `output` = optional final resample freq; `agg="mean"` for
+  levels, `"sum"` for flows; `fill` is `None`/`"ffill"`/`"interpolate"`.
+- The returned `report` DataFrame logs every rebase factor and overlap junction - audit it.
 
 ## mgplot Package Reference
 
 The `mgplot` package (source in `~/mgplot`) wraps matplotlib for economic data charting.
-**Prefer `*_finalise` functions** for simple single-layer charts.
-For composite charts (e.g. fan charts, overlaid fills + lines), layer mgplot functions
-with `ax=` chaining, then call `finalise_plot()` to close out. Avoid raw matplotlib
-(`ax.plot()`, `ax.fill_between()`, etc.) when an mgplot function exists.
+**Prefer `*_finalise` functions** for simple single-layer charts. For composite charts,
+layer mgplot functions with `ax=` chaining, then call `finalise_plot()`. Avoid raw
+matplotlib (`ax.plot()`, `ax.fill_between()`, etc.) when an mgplot function exists.
 
 ### Architecture
-```
+```python
 # Simple charts: use *_finalise (one-step convenience)
-line_plot_finalise(data, **kwargs)
-  └─ plot_then_finalise()
-       ├─ line_plot(data, **plot_kwargs)    → returns Axes
-       └─ finalise_plot(axes, **fp_kwargs)  → styles, saves, closes
+line_plot_finalise(data, **kwargs)        # line_plot() then finalise_plot()
 
 # Composite charts: layer mgplot functions, then finalise
 ax = fill_between_plot(band_data, color="red", alpha=0.1, label="90% CI")
-line_plot(history, ax=ax, color=["navy"], width=2)
-finalise_plot(ax, title="...", ylabel="...", show=False)
+line_plot(history, ax=ax, color=["navy"])
+finalise_plot(ax, title="...", ylabel="...")
 
 # finalise_plot() does NOT support plot-level kwargs like annotate, width, color.
 ```
-
-### Chart Directory Management
-```python
-import mgplot as mg
-mg.set_chart_dir("./CHARTS/MyCharts/")
-mg.clear_chart_dir()
-```
-
-**Warning:** `abs_helper.get_abs_data()` calls both `set_chart_dir()` and `clear_chart_dir()`.
-Don't call it multiple times or you'll reset/clear your chart directory.
+The runner sets the chart directory; a module writes into a subfolder with
+`with mg.chart_subdir("States"): ...`.
 
 ### All *_finalise Functions
-Each plots data AND saves to file. Pass combined plot + finalise kwargs in one call.
-
 ```python
 mg.line_plot_finalise(df, ...)           # Line charts
 mg.bar_plot_finalise(df, ...)            # Bar charts (grouped or stacked)
@@ -312,229 +276,52 @@ mg.summary_plot_finalise(df, ...)        # Z-score summary (creates 2 plots)
 ### Line Plot Parameters (LineKwargs)
 ```python
 mg.line_plot_finalise(
-    data,                # Series or DataFrame
-    width=2,             # Line width (float, int, or list per series). NOT lw.
+    data,                # Series or DataFrame (PeriodIndex or RangeIndex)
+    width=2,             # Line width (float or list per series). NOT lw.
     color=["blue"],      # Colors (str or list per series)
     style="-",           # Line style (str or list)
-    alpha=1.0,           # Opacity (float or list)
-    marker=None,         # Marker style
-    markersize=None,     # Marker size
-    drawstyle=None,      # e.g. "steps-post"
+    alpha=1.0, marker=None, markersize=None, drawstyle=None,
     annotate=True,       # Add endpoint value labels
-    rounding=1,          # Decimal places for annotations
-    fontsize="small",    # Annotation font size
-    annotate_color=None, # Annotation color (str, bool, or list)
+    rounding=1, fontsize="small", annotate_color=None,
     plot_from=None,      # Start index (int offset or Period)
-    label_series=None,   # Label lines directly instead of legend
-    dropna=True,         # Drop NaN values
+    label_series=None, dropna=True,
     # ... plus all Finalise kwargs below
 )
 ```
 
 ### Finalise Parameters (FinaliseKwargs)
-These work on ALL `*_finalise` functions:
 ```python
-# Titles and labels
-title="Chart Title",       # Also used for filename
-suptitle="Super Title",    # Above the title
-ylabel="Per cent",
-xlabel="Year",
-
-# Footers and headers (annotations outside plot area)
-rfooter="Source: ABS",     # Right footer
-lfooter="Australia. ",     # Left footer
-rheader="",                # Right header
-lheader="",                # Left header
-
-# Axis limits and ticks
-xlim=(0, 100),
-ylim=(0, 100),
-xticks=[...],
-yticks=[...],
-
-# Legend: True, False, None, or dict with any matplotlib legend kwargs
-legend=True,
-legend={"loc": "upper left", "fontsize": "small", "title": "Quantiles", "ncol": 2},
-
-# Reference lines and bands (single dict or list of dicts)
-axhline={"y": 2.5, "color": "red", "linestyle": "--"},
-axvline={"x": pd.Period("2020-03"), "color": "grey"},
-axhspan={"ymin": 2, "ymax": 3, "color": "lightgreen"},
-axvspan={"xmin": ..., "xmax": ...},
-
-# Display and save
-y0=True,           # Horizontal line at y=0 if data crosses zero
-show=False,        # Display in notebook
-tag="mytag",       # Filename becomes: title-mytag.png
-pre_tag="prefix",  # Filename becomes: prefix-title.png
-file_type="png",   # Output format
-dpi=300,           # Resolution
-figsize=(8, 6),    # Figure size
-dont_save=False,   # Skip saving
-dont_close=False,  # Keep figure open
+title="Chart Title",       # Also used for the file name (sanitised to [a-z0-9-])
+suptitle=..., ylabel=..., xlabel=...,
+rfooter="ABS: 6401.0", lfooter="Australia. ", rheader="", lheader="",
+xlim=..., ylim=..., xticks=..., yticks=...,
+legend=True,               # or a dict of matplotlib legend kwargs
+axhline={"y": 2.5, "color": "red", "linestyle": "--"},   # dict or list of dicts
+axvline=..., axhspan=..., axvspan=...,
+y0=True,                   # Horizontal line at y=0 if data crosses zero
+tag="mytag", pre_tag="prefix",   # file name: prefix-title-mytag.png
+file_type="png", dpi=300, figsize=(9, 4.5), dont_save=False, dont_close=False,
 ```
 
 ### Bar Plot Specific (BarKwargs)
 ```python
-mg.bar_plot_finalise(
-    df,
-    stacked=False,         # True = stacked, False = grouped side by side
-    annotate=True,         # Value labels on bars
-    width=0.8,             # Bar width (0-1)
-    above=True,            # Annotations above bars
-    label_rotation=0,      # X-axis label rotation
-    color=["blue", "red"],
-)
+mg.bar_plot_finalise(df, stacked=False, annotate=True, width=0.8, above=True,
+                     label_rotation=0, horizontal=False, color=[...])
 ```
 
 ### Multi-Plot Functions
 ```python
-# Same chart at multiple starting points
-mg.multi_start(df, function=mg.line_plot_finalise, starts=[0, -20], title="Chart")
-
-# One chart per column
+mg.multi_start(df, function=mg.line_plot_finalise, starts=quarterly_plot_times, title="Chart")
 mg.multi_column(df, function=mg.line_plot_finalise, title="Chart")
-
-# Chain any plot function + finalise (used internally by *_finalise)
 mg.plot_then_finalise(data, function=mg.line_plot, title="Chart")
 ```
 
 ### Utility Functions
 ```python
-mg.calc_growth(series)           # Returns DataFrame with QoQ and TTY columns
-mg.get_color("NSW")              # State color
+mg.get_color("NSW")              # State / party colour
 mg.abbreviate_state("Victoria")  # → "Vic."
+mg.colorise_list(parties)        # party colours for a list
 mg.contrast("blue")              # Contrasting color for text
 ```
-
-## Local Helper Modules (in /notebooks/)
-
-### abs_helper.py
-Standard notebook setup. **Warning:** `get_abs_data()` resets the chart directory - only call once per notebook. (GDP and population getters used to live here; they now have their own modules - see below. `abs_helper` no longer imports `decompose`/`henderson`, so it does not pull in statsmodels.)
-
-```python
-from abs_helper import get_abs_data, collate_summary_data, ANNUAL_CPI_TARGET_RANGE
-
-# Fetches data AND sets up the chart directory (calls set_chart_dir + clear_chart_dir)
-abs_dict, meta, source, RECENT = get_abs_data("6401.0")
-
-# Build a summary table for mgplot.summary_plot()  (verbose is keyword-only)
-summary = collate_summary_data(to_get, abs_dict, meta)
-
-# CPI target constants for plotting
-ANNUAL_CPI_TARGET_RANGE  # {"ymin": 2, "ymax": 3, ...} for axhspan
-QUARTERLY_CPI_TARGET     # {"y": 0.617, ...} for axhline
-MONTHLY_CPI_TARGET       # {"y": 0.206, ...} for axhline
-```
-
-### abs_gdp.py
-GDP from the National Accounts (5206.0 key aggregates), cached per kernel session; returns `(series, units)`.
-
-```python
-from abs_gdp import get_gdp
-gdp, units = get_gdp(gdp_type="CVM", seasonal="SA")   # gdp_type: CP|CVM ; seasonal: SA|T|O
-```
-
-### abs_population.py
-Single `get_population()` dispatcher for every population concept, plus the smoothing / age-share helpers. Owns the `decompose`/`henderson` (statsmodels) dependency. Leaf fetchers are cached. **Every `get_population(...)` call returns a `(series, units)` tuple** (a defensive copy) - including with `smoothed=`.
-
-```python
-from abs_population import get_population, smoothed_monthly_pop_growth
-
-# measure: "ERP" | "civ15" | "adult21" | "implicit"   (state accepts aliases: NSW, Vic, Aus...)
-pop, units    = get_population("ERP", state="NSW")        # ERP by state; project=True extends ~2 periods
-civ15, units  = get_population("civ15", freq="Q")         # monthly -> quarterly mean (civ15 only)
-adults, units = get_population("adult21")                 # quarterly 21+ (civ15 x national 21/15 share)
-growth, units = get_population("civ15", smoothed=True)    # smoothed monthly increment; smoothed=True|{how}
-
-# Also exported - these return a bare Series (transforms/ratios), NOT a tuple:
-#   smoothed_monthly_pop_growth(level), get_adult_21_share_of_15(), interp_21_share(index)
-```
-
-| measure | source | notes |
-|---------|--------|-------|
-| `ERP` | 3101.0 / 310104 | by state; `project=True` extends ~2 periods |
-| `civ15` | 6202.0 / 62020010 | by state; monthly; `freq="Q"`; `smoothed=True\|{}` |
-| `adult21` | derived | state civ15 x national 21/15 share (quarterly) |
-| `implicit` | 5206.0 | GDP / GDP-per-capita; national only |
-
-### abs_prices.py
-Price / numeraire getters. Every series is selected by data-item description (never by series ID); each getter is cached per kernel session and returns `(series, units, stype)` - the series type is reported because it is fixed internally (the caller does not choose it), so callers can label footers.
-
-```python
-from abs_prices import get_price_deflator, get_cpi, get_wage_index, get_house_price_index
-
-dfd, units, stype = get_price_deflator("DFD")  # DFD | GNE | HFCE | GDP - published SA IPD index (5206.0)
-cpi, units, stype = get_cpi("headline")        # headline (reconstructed to 1948) | headline_sa | trimmed | weighted (6401.0)
-wpi, units, stype = get_wage_index("WPI")      # WPI (SA index, 6345.0) | AWOTE ($/week, biannual, 6302.0)
-hpi, units, stype = get_house_price_index()    # long-run $ level to 1986 (6432 mean value + discontinued 6416 splice)
-hpi, units, stype = get_house_price_index(extend_bis=True, real=True, seasonally_adjusted=True)
-report = get_house_price_splice_report(extend_bis=True)   # the ra.splice() audit for the house-price index
-```
-
-- `get_price_deflator`: published Seasonally Adjusted IPDs (the ABS publishes them SA only); DFD (domestic final demand) is the default - the GDP deflator is compromised as a domestic gauge by the terms of trade.
-- `get_cpi("headline")`: reconstructed from the published quarterly % change (artefact-free back to 1948); each measure sits on its native ABS reference base (YoY is base-invariant).
-- The CPI target constants for plotting remain in `abs_helper`.
-- `get_house_price_index()` takes three keyword-only flags: `extend_bis` splices the BIS/REIA index underneath the ABS segments to reach 1970Q1 (trimmed to a year of overlap, since one rebase factor over four decades invents a 2.7% fall at the junction); `real` deflates by the headline CPI into latest-CPI-quarter dollars; `seasonally_adjusted` returns the SA component (the spliced level is Original, so pass this before indexing to any single quarter). `units` and `stype` follow the flags.
-- This module owns the `decompose` (statsmodels) dependency, for that seasonal adjustment.
-
-### abs_inflation_backplane.py
-Chart background that shades the periods where annualised quarterly trimmed mean inflation sat outside the RBA's 2-3% band: red above, blue below, in three steps of intensity (0-1, 1-2, 2+ points outside), each with a legend entry. Fetches its own inflation via `abs_prices.get_cpi("trimmed")`. Ported from MacroModels `ustar/analyse.py` `_inflation_regime_spans`, with legend-able steps in place of its continuous alpha ramp.
-
-```python
-from abs_inflation_backplane import BACKPLANE_LHEADER, inflation_backplane
-
-ax = line_plot(frame, ...)                   # plot the data first
-ax = inflation_backplane(frame.index, ax)    # index required; ax optional (new axes if None)
-finalise_plot(ax, lheader=BACKPLANE_LHEADER, legend={"loc": "upper left", "fontsize": "x-small", "ncol": 4}, ...)
-```
-
-- `index` must be a quarterly or monthly `PeriodIndex` (anything else raises); a month takes its quarter's inflation, so monthly shading comes in three-month blocks. On a monthly chart, months after the last published quarter take the monthly trimmed mean (6401.0 table 640106, from 2024-04): the rolling three-month-average index against the three months before, annualised. It tracks the published quarterly figure to about 0.3 points (the ABS trims monthly and quarterly price changes separately) and is not marked differently; each quarterly release replaces it. On a quarterly chart the unpublished current quarter is simply left unshaded.
-- Spans are drawn at period ordinals, matching mgplot's period axis, so either call order works - but plot the data first if you want the lines listed before the swatches in the legend (legend order is drawing order).
-- Six zero-width labelled key spans lead the shading (reds, then blues, each nearest the band first), so any legend shows every step. The caller sets the layout with `ncol`.
-- `finalise_plot` owns the header, so pass `BACKPLANE_LHEADER` yourself. On a monthly chart, append `BACKPLANE_MONTHLY_LFOOTER` to the lfooter after the geography (it notes the 3-month annualised fill after the latest quarter). The band is a headline-CPI target, so the shading marks where the core measure sat outside it, not where the target was missed.
-- `quarterly_inflation()` and `monthly_inflation_tail()` are also exported: the annualised quarterly trimmed mean being shaded (from 1982Q2), and the monthly fill for the months after it (empty when there are none).
-
-### abs_spliced_series.py
-Long-run series that reach back before the modern ABS collections, each joining a published ABS series to older and less comparable evidence. Cached per kernel session; every splice exposes its `ra.splice()` audit report.
-
-```python
-from abs_spliced_series import (
-    get_unemployment_rate, get_unemployment_splice_report, get_unemployment_backcast_stats,
-    get_productivity_index, get_productivity_splice_report,
-)
-
-ur, units, stype = get_unemployment_rate()      # monthly, back to 1950-06
-prod, units, stype = get_productivity_index()   # GDP per hour worked, quarterly, back to 1966Q3
-```
-
-- `get_unemployment_rate()`: three segments, `rebase=False` (rates, not levels) - the published LFS monthly rate (6202.0, from Feb 1978), the Modellers' Database rate (1364.0.15.003, quarterly counts turned into a rate then interpolated to monthly, from 1959Q3), and a CES-based backcast beneath that (RBA OP8 table 4.15, a line fitted to the survey over 1960-1970). Only the LFS segment is a genuinely monthly survey. **There is a real two-month gap at 1959-07/08** between the modelled and Modellers' segments; `ra.splice` leaves it rather than interpolating, so `line_plot` warns about 2 missing index values.
-- `get_unemployment_backcast_stats()`: the fit diagnostics. The pair that matters is `fitted_ces_*` against `projected_ces_*` - the early CES values sit below the range the line was fitted over, so the 1950s are extrapolation.
-- `get_productivity_index()`: two segments, `rebase=True` (ratio-scale index) - the published 5206.0 Key Aggregates "GDP per hour worked: Index" (SA, unchanged from 1978Q3) over a series derived by dividing SA CVM GDP by RBA OP8 table 4.12 aggregate weekly hours (an annual August snapshot, cubic-interpolated to quarters). The derived segment contributes growth, not level.
-
-Used by `ABS Political.ipynb`, `ABS Monthly Labour Force 6202.ipynb` (unemployment) and `ABS Quarterly National Accounts 5206 No 2.ipynb` (productivity).
-
-### abs_structured_capture.py
-For fetching multiple series from different catalogues. **Does NOT reset chart directory** - safe to use for additional data fetching.
-
-```python
-from abs_structured_capture import ReqsTuple, ReqsDict, get_abs_data, load_series
-
-# ReqsTuple fields: (cat, table, did, stype, unit, seek_yr_growth, calc_growth, zip_file)
-# stype codes: "O"=Original, "S"/"SA"=Seasonally Adjusted, "T"=Trend
-
-# Single series
-cpi = ReqsTuple("6401.0", "640106", "All groups CPI, seasonally adjusted", "S", "", True, False, "")
-cpi_series = load_series(cpi)
-
-# Multiple series from different catalogues
-wanted: ReqsDict = {
-    "CPI": ReqsTuple("6401.0", "640106", "All groups CPI, seasonally adjusted", "S", "", True, False, ""),
-    "Unemployment": ReqsTuple("6202.0", "62020001", "Unemployment rate ;  Persons ;", "S", "", False, False, ""),
-}
-data = get_abs_data(wanted)  # Returns dict[str, Series]
-```
-
-**Key differences:**
-- `abs_helper.get_abs_data(cat)` → returns `(dict, meta, source, recent)`, sets chart dir
-- `abs_structured_capture.get_abs_data(wanted)` → returns `dict[str, Series]`, no chart dir changes
+A log y-axis needs `line_plot` + `ax.set_yscale("log")` + explicit `set_yticks` before
+`finalise_plot`; `yscale=` alone gives scientific-notation labels and no gridlines.

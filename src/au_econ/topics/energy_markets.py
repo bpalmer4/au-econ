@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import mgplot as mg
 import pandas as pd
+from mgplot.utilities import get_color_list
 
 from au_econ.sources import cme, eia, oilprice, opec, yahoo
 
@@ -25,9 +26,9 @@ TOPICS = ("commodities",)
 TITLE = "Energy Markets"
 
 # --- constants
-SOURCE_YAHOO = "Source: Yahoo Finance"
-SOURCE_EIA_OPEC = "Source: U.S. EIA, OPEC Secretariat"
-SOURCE_OILPRICE = "Source: Oilprice.com"
+SOURCE_YAHOO = "Yahoo"
+SOURCE_EIA_OPEC = "EIA; OPEC"
+SOURCE_OILPRICE = "Oilprice.com"
 SHORT_START = "2026-01-01"  # history start for the oil, gas and refined-product charts
 RETAIL_START = "2025-01-01"  # a full flat 2025 baseline ahead of the disruption
 LEGEND = {"loc": "best", "fontsize": "x-small"}
@@ -77,7 +78,6 @@ CME_JKM = 7049  # LNG Japan/Korea Marker (Platts) futures (USD/MMBtu)
 
 # forward curves
 N_FORWARD_MONTHS = 18
-FWD_CURVE_COLORS = ["darkblue", "darkorange", "cornflowerblue"]  # the third is for the three-series gas curve
 NORMAL_2025_MEAN = {  # calendar-2025 mean front-month close, USD per barrel
     WTI: 64.74,  # CL=F
     BRENT: 68.10,  # BZ=F
@@ -95,11 +95,7 @@ Y_PADDING = 0.02  # share of the range added above and below, so reference lines
 CURVE_MARKER_SIZE = 4
 
 # location premium, retail petrol
-SPREAD_COLORS = ["cornflowerblue", "purple"]
-SPREAD_WIDTH = 1.5
 ZERO_LINE = {"y": 0, "color": "#555555", "linestyle": "-", "linewidth": 1.5}  # heavier than mgplot's y0
-RETAIL_COLOR = "darkblue"
-RETAIL_WIDTH = 1.5
 BASELINE_YEAR, EVENT_YEAR, TROUGH_MONTH, PEAK_MONTH = 2025, 2026, 7, 3
 NORMAL_DIFFERENTIAL_BAND = {"ymin": -3, "ymax": 0, "color": "grey", "alpha": 0.2}
 PERCENT = 100
@@ -241,10 +237,11 @@ def _first_contango_flip(curve: pd.Series) -> pd.Period | None:
 
 def _reference_lines(columns: pd.Index, means: dict[str, float]) -> list[dict[str, Any]]:
     """Return the 2025-mean reference line for each column that has one, in its colour, dashed and finer."""
+    colors = get_color_list(len(columns))  # mgplot's line colours
     return [
         {
             "y": means[column],
-            "color": FWD_CURVE_COLORS[i % len(FWD_CURVE_COLORS)],
+            "color": colors[i],
             "linestyle": "--",
             "linewidth": REFERENCE_LINE_WIDTH,
             "label": f"{column}: 2025 mean",
@@ -273,10 +270,11 @@ def _forward_curve_chart(frame: pd.DataFrame, as_of: str, *, title: str, rfooter
             changes.append((valid.iloc[-1] / valid.iloc[0] - 1) * PERCENT)
     average = sum(changes) / len(changes) if changes else 0.0
     back = _period(frame.dropna(how="all").index[-1])
+    colors = get_color_list(frame.shape[1])  # mgplot's line colours
     flips = [
         {
             "x": flip,
-            "color": FWD_CURVE_COLORS[i % len(FWD_CURVE_COLORS)],
+            "color": colors[i],
             "linestyle": "-.",
             "linewidth": REFERENCE_LINE_WIDTH,
             "label": f"{column}: backwardation to contango",
@@ -289,7 +287,6 @@ def _forward_curve_chart(frame: pd.DataFrame, as_of: str, *, title: str, rfooter
         title=title,
         ylabel="USD per barrel",
         xlabel="Contract month",
-        color=FWD_CURVE_COLORS[: frame.shape[1]],
         legend=LEGEND,
         annotate=True,
         rounding=2,
@@ -360,12 +357,12 @@ def location_premium(data: EnergyData) -> None:
         f"{[round(v, 2) for v in spreads[to_brent].tail(10)]}"
     )
     peak = _period(spreads[to_wti].idxmax())
-    ax = mg.line_plot(spreads, color=SPREAD_COLORS, width=SPREAD_WIDTH, annotate=True, rounding=2, dropna=True)
+    ax = mg.line_plot(spreads, annotate=True, rounding=2, dropna=True)
     _annotate_point(
         ax,
         spreads[to_wti],
         peak,
-        color=SPREAD_COLORS[0],
+        color=get_color_list(spreads.shape[1])[list(spreads.columns).index(to_wti)],
         dx=10,
         dy=-4,
         ha="left",
@@ -439,7 +436,7 @@ def crude_forward_curves(data: EnergyData) -> None:
         prices,
         _as_of({WTI: wti["date"].max(), BRENT: brent["date"].max()}),
         title="Crude Oil Forward Curves: WTI and Brent",
-        rfooter="Source: Yahoo Finance (NYMEX CL, ICE BZ)",
+        rfooter="Yahoo: NYMEX CL, ICE BZ",
     )
 
 
@@ -456,7 +453,7 @@ def singapore_forward_curves(data: EnergyData) -> None:
         curves,
         _as_of(dates),
         title="Singapore Refined Product Forward Curves: Gasoil and Petrol",
-        rfooter="Source: CME Group (NYMEX SGB, N1B settlements)",
+        rfooter="CME Group: NYMEX SGB, N1B",
     )
 
 
@@ -531,7 +528,7 @@ def crack_spreads(data: EnergyData) -> None:
         axvline=EVENTS,
         y0=True,
         lfooter=f"Sing.: NYMEX futures; US Gulf: EIA spot. Data to {_last_day(cracks)}.",
-        rfooter="Source: Yahoo Finance, U.S. EIA",
+        rfooter="Yahoo; EIA",
     )
 
 
@@ -554,12 +551,13 @@ def retail_petrol(data: EnergyData) -> None:
     print(f"March 2026 peak  {march.max():.3f} on {march.idxmax()}")
     print(f"Series peak      {petrol.max():.3f} on {petrol.idxmax()}")
 
-    ax = mg.line_plot(petrol, color=[RETAIL_COLOR], width=RETAIL_WIDTH, annotate=True, rounding=3)
+    (retail_color,) = get_color_list(1)  # mgplot's colour for a single line
+    ax = mg.line_plot(petrol, annotate=True, rounding=3)
     _annotate_point(
         ax,
         petrol,
         trough,
-        color=RETAIL_COLOR,
+        color=retail_color,
         dx=-16,
         dy=-46,
         ha="right",
@@ -574,14 +572,14 @@ def retail_petrol(data: EnergyData) -> None:
         legend=LEGEND,
         axhline={
             "y": mean_2025,
-            "color": RETAIL_COLOR,
+            "color": retail_color,
             "linestyle": "--",
             "linewidth": REFERENCE_LINE_WIDTH,
             "label": "2025 mean",
         },
         axvline=EVENTS,
         lfooter=f"Weekly US average, all formulations, regular grade. Data to {_last_day(petrol)}.",
-        rfooter="Source: U.S. EIA",
+        rfooter="EIA",
     )
 
 
@@ -640,7 +638,6 @@ def gas_forward_curves(data: EnergyData) -> None:
         title="Natural Gas Forward Curves: Henry Hub, TTF and JKM",
         ylabel="USD per MMBtu",
         xlabel="Contract month",
-        color=FWD_CURVE_COLORS[: gas.shape[1]],
         legend=LEGEND,
         annotate=True,
         rounding=2,
@@ -651,7 +648,7 @@ def gas_forward_curves(data: EnergyData) -> None:
         lheader="TTF converted EUR/MWh to USD/MMBtu at spot EUR/USD",
         rheader=f"Henry Hub seasonal range {hh.min():.2f} to {hh.max():.2f} USD/MMBtu",
         lfooter=f"Dashed = 2025 mean. Latest settle per dated contract. As of {as_of}.",
-        rfooter="Source: Yahoo Finance, CME Group",
+        rfooter="Yahoo; CME Group",
     )
 
 

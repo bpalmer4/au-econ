@@ -291,6 +291,15 @@ def _clear_images(folder: Path) -> None:
                 image.unlink()
 
 
+def _clear_stale_folders(topic_folder: Path, current: set[str]) -> None:
+    """Delete the images in a topic folder's subfolders that no module in the run writes to."""
+    if not topic_folder.is_dir():
+        return
+    for folder in topic_folder.iterdir():
+        if folder.is_dir() and folder.name not in current:
+            _clear_images(folder)
+
+
 def _run_chart(chart: Chart, data: object) -> str | None:
     """Run one chart function; return a description of its failure, or None on success."""
     print(f"  {chart.name}")
@@ -303,23 +312,27 @@ def _run_chart(chart: Chart, data: object) -> str | None:
     return None
 
 
-def _folder(module: ChartModule, topic: str | None) -> Path:
-    """Return a module's chart folder, under CHARTS/ or, for a topic run, CHARTS/<topic>/."""
-    base = paths.CHARTS_DIR / topic if topic else paths.CHARTS_DIR
+def _folder(root: Path, module: ChartModule, topic: str | None) -> Path:
+    """Return a module's chart folder, under the root or, for a topic run, under <root>/<topic>/."""
+    base = root / topic if topic else root
     return base / module.folder_name
 
 
 def _run_module(module: ChartModule, charts: tuple[Chart, ...], folder: Path, *, clear: bool) -> Failures:
-    """Run a module's selected charts into a folder, deleting its images first if asked."""
+    """Run a module's selected charts into a folder, deleting its images first if asked.
+
+    The images are deleted only once fetch() has succeeded, so a source that cannot be
+    reached leaves the previous charts in place.
+    """
     print(f"\n{folder.relative_to(paths.PROJECT_ROOT)}")
     mg.set_chart_dir(str(folder))
-    if clear:
-        _clear_images(folder)
     try:
         data = module.fetch()
     except Exception as exc:
         traceback.print_exc()
         return [(chart.name, f"fetch() failed: {_describe(exc)}") for chart in charts]
+    if clear:
+        _clear_images(folder)
     failures: Failures = []
     for chart in charts:
         failure = _run_chart(chart, data)
@@ -378,6 +391,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--charts", nargs="+", metavar="NAME", help="only these charts, without clearing the folder"
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=f"a test run into {paths.CHECK_DIR.relative_to(paths.PROJECT_ROOT)}/, leaving CHARTS/ untouched",
+    )
     parser.add_argument("--list", action="store_true", help="list modules; with a run set or --all, their charts")
     parser.add_argument("--variables", action="store_true", help="list the shared short economic names")
     parser.add_argument("--topics", action="store_true", help="list the shared broad words (topics)")
@@ -386,6 +404,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         parser.error("give a run set or --all, not both")
     if args.charts and not (args.name or args.all):
         parser.error("--charts filters within a run set: give a run set or --all")
+    if args.check and not (args.name or args.all):
+        parser.error("--check tests a run set: give a run set or --all")
     if not (args.name or args.all or args.list or args.variables or args.topics):
         parser.error("give one run set, or --all, --list, --variables or --topics")
     return args
@@ -416,12 +436,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     plan = _plan(name, wanted=wanted, modules=modules)
     if plan is None:
         return EXIT_REFUSED
-    full = not wanted
     topic = name if name in TOPICS else None
-    if full and topic:  # the whole topic folder, so a module that left the topic leaves nothing behind
-        _clear_images(paths.CHARTS_DIR / topic)
+    return _execute(plan, topic, full=not wanted, check=args.check)
+
+
+def _execute(
+    plan: list[tuple[ChartModule, tuple[Chart, ...]]], topic: str | None, *, full: bool, check: bool
+) -> int:
+    """Run the planned modules into CHARTS/ (or the check folder); return the exit code."""
+    root = paths.CHECK_DIR if check else paths.CHARTS_DIR
+    if check:  # each check starts clean, so what is there afterwards is this run's work
+        _clear_images(root)
+    if full and topic:  # folders of modules that have left the topic, so they leave nothing behind
+        _clear_stale_folders(root / topic, {module.folder_name for module, _charts in plan})
     results = [
-        (module, len(charts), _run_module(module, charts, _folder(module, topic), clear=full and not topic))
+        (module, len(charts), _run_module(module, charts, _folder(root, module, topic), clear=full))
         for module, charts in plan
     ]
+    if check:
+        print(f"\nCheck run: charts in {root.relative_to(paths.PROJECT_ROOT)}/; CHARTS/ untouched.")
     return _summarise(results)

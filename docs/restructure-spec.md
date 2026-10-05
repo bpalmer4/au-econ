@@ -67,8 +67,254 @@ Also done 2026-10-04, both stages: the Modellers' Database (`1364`, `mdb`, new t
 the `ABS Quarterly National Accounts 5206 No 2` notebook. The notebook's 2 Oct chart folder
 lacked nine charts, so stage one used a fresh run of a scratch copy of the notebook: 60 of 60
 identical. The 1966 spliced GDP per hour worked index (RBA OP8 hours) now lives in the module.
-Next: the National Accounts partial indicators (5302, 5625, 5676, 8755, 5232), or the
-stage-two backlog (energy, yahoo, asx, rba-rates, rba-bonds, oecd, fred-gdp).
+Done 2026-10-05: stage two for the backlog (`energy`, `yahoo`, `asx`, `rba-rates`,
+`rba-bonds`), in six passes, each confined to its predicted pixels: source-rule rfooters
+(Yahoo as "Yahoo", matching `somp`), "Australia. " lfooters, colon titles, mgplot line
+widths, mgplot colours (energy's reference lines and annotations take theirs from
+`mgplot.utilities.get_color_list`, so they still match their lines), and the standard
+quarterly window for E13 (all its series are quarterly-indexed). That clears the stage-two
+backlog. The launchd job already runs `run.py` (`energy`, `yahoo`, `asx`) through
+`yahoo-commodities-update.sh`, which the plist still calls.
+Also done 2026-10-05: topics reorganised at the user's direction. 5206 and 1364 are now in
+one topic, `economy` (replacing `activity`, `wages` and `prices` for 5206, and
+`productivity` for 1364; `activity` and `productivity` were removed, being empty). New
+topics `building` (construction, building activity, capital expenditure, housing),
+`trade` and `business` are added as their first modules arrive. Also done 2026-10-05,
+both stages: 8755 Construction Work Done (`cwd`, topic `building`), 7 chart functions,
+37 charts; stage one matched a same-day run of the notebook 37 of 37. Stage two: the
+GDP-share rfooter `ABS: 5206.0, 8755.0`, and `quarterly_plot_times` for the recent and
+growth windows (the notebook used `0, -20` and `-19`); the state colours are kept.
+Also done 2026-10-05, both stages: 5625 Capital Expenditure (`capex`, topic `building`),
+5 chart functions, 130 charts; stage one matched a same-day notebook run 130 of 130.
+Stage two: "Seasonally adjusted." wording in the data-centre lfooters; mgplot line widths
+on the IMT equipment v buildings chart, which is also recalibrated ($ Billions, not a
+hard-coded "$ million (CVM)"); `quarterly_plot_times` for the recent and growth windows
+(the notebook used `0, -29` and `-19`).
+Also done 2026-10-05, both stages: 5302 Balance of Payments (`bop`, new topic `trade`),
+7 chart functions, 36 charts; stage one matched a same-day notebook run 36 of 36 (the
+re-referencing down-weight in the net exports contribution runs only while the balance of
+payments leads GDP, so it was not exercised). The 5206 current-account charts stay in
+5206, at the user's direction. `series.gdp` gained `get_table` (any 5206.0 table, through
+its cached reader). Stage two: source-rule rfooters (`ABS: 5302.0`; `ABS: 5206.0, 5302.0`
+with GDP), "Seasonally adjusted." / "Current prices." wording, mgplot line widths,
+"/Quarter" on the dollar-flow levels (not the end-of-period debt stock), and
+`quarterly_plot_times` (already `0, -21`).
+Also done 2026-10-05, both stages: 5676 Business Indicators (`bi`, new topic `business`),
+7 chart functions, 61 charts; stage one matched a same-day notebook run 61 of 61 (the
+re-referencing down-weight is not exercised, as for 5302). `fix_abs_title` moved from
+`national_accounts_5206/common.py` to `charting/titles.py` (releases may not import each
+other); 5206 redrew all 755 charts identical. Stage two: source-rule rfooters; lfooters
+built from the description ("Seasonally adjusted.", the price measure in standard
+wording, "Companies." for profit before income tax), dropping the ABS scope codes
+(Total (State), Total (Industry), TOTAL (SCP_SCOPE), CORP) that `fix_abs_title` moved
+there; `quarterly_plot_times` (the notebook used `0, -29`, `0, -17` and `-19`); "/Quarter"
+on the dollar flows (profits, wages, the inventory change), not the inventory stocks. The
+headline charts' file-name prefix, meant to put them first in the folder, is now
+`TOP_OF_LIST = "AAA"` ("aaa-"): the notebook's `pre_tag="!"` did not work, as mgplot
+drops punctuation from file names and wrote "untitled-".
+Also done 2026-10-05, both stages: 5232 Financial Accounts (`fa`, topic `economy`), 8
+chart functions, 109 charts; stage one matched a same-day notebook run 109 of 109. New
+shared getters: `series.population.get_implicit_population` (GDP / GDP per capita, CVM,
+Original) and `series.prices.get_price_deflator` (DFD, GNE, HFCE, GDP), both reading
+5206.0 through `series.gdp.get_table`. Stage two: source-rule rfooters; lfooter tidy (the
+notebook's double space and doubled full stops; "Original series." on the net wealth
+charts; the GDP note shortened to "GDP = current prices, 4Q rolling sum.", which also
+cleared six footer collisions inherited from the notebook); mgplot line widths;
+`quarterly_plot_times` (the notebook used `0, -17`). Balance sheet items are stocks, so
+no "/Quarter". That completes the National Accounts partial indicators (5302, 5625, 5676,
+8755, 5232).
+Also done 2026-10-05, both stages: `ABS Population` is split by catalogue, at the user's
+direction, into 3401 Overseas Movements (`movements`) and 3101 Population (`erp`, still to
+do), both topic `migration`. 3401: `releases/abs/overseas_movements_3401.py`, 5 chart
+functions, 72 charts: the notebook's 70 `arr-` charts plus net permanent and long-term
+arrivals against NOM (it tests 3401's proxy against the official count). Stage one: 72
+of 72 identical to the same-named charts of a same-day notebook run. New
+`series/nom.py` (`get_nom`, official NOM through the year). Stage two: rfooter
+`ABS: 3101.0, 3401.0`; colon titles on the seasonal decomposition charts; "Seasonally
+adjusted." wording. The monthly windows stay (monthly line charts keep their own), as
+do the two widths that highlight a trend or the official series. File names keep the
+notebook's `arr-` and `multi-` prefixes.
+Also done 2026-10-05, both stages: 3101 Population (`erp`, topic `migration`), the rest of
+`ABS Population`: `releases/abs/population_3101/` (`common`, `erp`, `ages`, `growth`), 22
+chart functions, 115 charts. Stage one: 115 of 115 identical to the same-named charts of the
+same-day notebook run, including the three age-distribution charts, redrawn with mgplot
+`line_plot` in place of the notebook's pandas `df.plot` (mgplot needs a RangeIndex of age).
+New shared code: `series.population.get_civ15`, `erp_age_sum`, `interp_june` and the now
+public `complete_trailing_quarter`; `series.nom.get_nom_forward_proxy`. Stage two: source-
+rule rfooters (no table numbers, "ABS Cat." or "Calculated from"; the life tables cited as
+3302.0.55.001; charts drawing only on 3101.0 data no longer cite 5206.0 and 6202.0);
+lfooters for the state ERP and median-age-by-gender charts, which had none; the migration
+and intercensal-discrepancy lfooters shortened, clearing five collisions inherited from the
+notebook; mgplot line widths where a single width highlighted nothing; mgplot colours (the
+proxy lines still share a colour, from `get_color_list`); `quarterly_plot_times` for the
+quarterly charts (the state growth charts' file names change from `-growth--13` to
+`-growth--21`). Monthly charts keep their own windows. Added after
+the conversion, at the user's request: "Population Growth: 6202 Forward Proxy", the NOM
+forward proxy chart's twin for total ERP growth (`series.nom.get_population_growth_proxy`:
+the NOM proxy plus natural increase, held at its latest value past the last official
+quarter); both charts share `_forward_proxy_chart`.
+Also done 2026-10-05, both stages: 6416 Residential Property Prices (`rppi`, topic
+`building`; the release was discontinued in 2021), 3 chart functions, 6 charts; stage one
+matched a same-day notebook run 6 of 6. New `series/housing.py`: `get_house_price_index`
+and its splice report (6432.0 mean dwelling price over the 6416.0 RPPI and established-
+house index, from 1986Q2). Its BIS extension, CPI deflation and seasonal adjustment, which
+`ABS Real Estate` and `ABS Political` use, were added with the Real Estate conversion. Stage two: source-rule rfooters; series types in the
+lfooters; mgplot widths and colours; `quarterly_plot_times` (the notebook used `0, -41`).
+Also done 2026-10-05, both stages: 8752 Building Activity (`activity`, topic `building`),
+6 chart functions, 59 charts; stage one matched a same-day notebook run 59 of 59. ERP comes
+from `series.population.get_erp(project_quarters=2)`; the 8731 approvals and the 6202
+state civilian-population tables are read in the module. Stage two: source-rule rfooters
+(the notebook wrote `ABS: 8752 8731 3101`); per-state charts' lfooters start "Australia."
+(the state is in the title); the completions-per-new-adult lfooter shortened, clearing
+five collisions; mgplot widths and colours (the dashed approvals line and the state
+colours stay); `quarterly_plot_times` for the quarterly charts (the notebook used
+`0, -20`); the monthly charts keep their 61-month window.
+Also done 2026-10-05, both stages: 8731 Building Approvals (`approvals`, topic `building`),
+7 chart functions, 42 charts; stage one matched a same-day notebook run 42 of 42. State ERP
+comes from `series.population.get_state_erp`, GDP from `get_gdp`; the statsmodels stubs gained
+`rsquared_adj`, `resid`, `predict`, `summary`, `has_constant` and `durbin_watson` for the
+approvals model. Stage two: source-rule rfooters (no table numbers or "&"); "Australia." on
+the seasonally adjusted v trend headline charts, which had no lfooter, and standard wording
+on the growth charts; `monthly_plot_times` for the growth charts (already 19 months) and
+`quarterly_plot_times` for the quarterly charts (the notebook used 2020Q4 and 40 quarters);
+the monthly line charts keep their December 2020 start.
+Also done 2026-10-05, both stages: `ABS Real Estate` as `topics/house_price_drawdowns.py`
+(`house-drawdowns`, topic `building`: it combines ABS and BIS data), 2 charts, nominal and
+real drawdowns from each previous peak; stage one matched a same-day notebook run 2 of 2,
+which also checks the new shared code against `abs_prices`: `series.housing`'s
+`extend_bis`, `real` and `seasonally_adjusted` options (BIS WS_SPP via
+`sources.bis.get_residential_property_prices`, trimmed to a year of overlap) and
+`series.prices.get_cpi("headline")`, the headline CPI rebuilt from 1948Q4 from the quarterly
+change. Stage two: rfooter `ABS: 6401.0, 6416.0, 6432.0; BIS: WS_SPP`; standard lfooter
+order; mgplot line widths.
+Also done 2026-10-05, both stages: 6432 Dwelling Stock (`dwellings`, topic `building`),
+`releases/abs/dwelling_stock_6432/` (`common`, `plots`, `stock`, `breakeven`, `revisions`,
+`value`), 24 chart functions, 72 charts (48, and 24 in `states/`); stage one, done by a
+background agent and checked here, matched a same-day notebook run 72 of 72. New in
+`series.population`: `get_civ15(state)`, `get_adult21`, `interp_21_share`,
+`interp_civ15_to_total` (each verified equal to `abs_population`). The notebook defined
+`get_extended_dwellings_count` twice (the second runs) and drew the preliminary
+affordability charts twice; the module ports the second and draws once. Stage two:
+rfooters through one `sources()` helper (ABS catalogues ordered, Census last, `; RBA: F5`);
+lfooters start "Australia." (per-state charts too), standard wording, and a shorter
+extended-history note, which cleared a collision inherited from the notebook; mgplot
+widths where one highlighted nothing; mgplot colours, with ties from `get_color_list`
+(state colours, surplus/deficit shading and the vintage colour gradient kept);
+`quarterly_plot_times` for the recent breakeven and completions charts (the notebook used
+40 quarters). The revisions loop now stops on readabs' `HttpError`/`CacheError` rather
+than any exception; the same two were added to 5302's and 5676's history fallbacks, which
+caught only `OSError` and so would have crashed on a missing past release. Left as found:
+the 2019Q4 index charts write "Q4-2019" where the common-start chart writes "2019Q4".
+Also done 2026-10-05, both stages: `ABS Yearly National Accounts` as
+`releases/abs/national_accounts_5204.py` (`asna`, topic `economy`), 3 chart functions, 13
+charts; stage one matched a same-day notebook run 13 of 13. The notebook tagged the two
+productivity charts with `str(f)`, so their file names carried a memory address that
+changed every run; the module tags them `bar` and `line` (compared by pairing). Stage two:
+rfooter `ABS: 5204.0` (table numbers dropped from the capital-stock charts); "Original
+series." on the growth and productivity lfooters; mgplot line widths (the bar width is
+kept).
+Also done 2026-10-05, both stages: `ABS Yearly State Accounts` as
+`releases/abs/state_accounts_5220.py` (`state-accounts`, topic `economy`), 3 chart
+functions, 4 charts; stage one matched a same-day notebook run 4 of 4, with state ERP from
+`series.population.get_state_erp`. Stage two: rfooter `ABS: 3101.0, 5220.0` on the
+per-capita chart (it divides by state ERP); lfooters in the standard wording ("Original
+series. Chain volume measures.", replacing descriptions that restated the title).
+Also done 2026-10-05, both stages: `ABS Yearly Government Finance Statistics 5512` as
+`releases/abs/government_finance_5512.py` (`gfs`, new topic `government`), 6 chart
+functions, 10 charts; stage one matched a same-day notebook run 10 of 10. An Excel-only
+release: `fetch()` finds each sector's workbook from its Contents sheet and parses the
+operating statements and balance sheets (net debt) once, into a frozen `GfsData`; a
+missing headline item now raises rather than printing and skipping. Stage two: rfooter
+`ABS: 5512.0` (`ABS: 3101.0, 5512.0` on the per-head charts); lfooters gain "Original
+series." and "GFS = Government Finance Statistics." (in every title), and shorter notes to
+clear collisions (net debt as "debt liabilities less matching assets"; the net-lending
+note dropped, its sign convention being in the title); mgplot colours on the two growth
+bar charts and mgplot widths on the headline charts (the black, wider Commonwealth line
+among the state colours is kept as a highlight).
+Also done 2026-10-05, both stages: `ABS Yearly Taxation Revenue 5506` as
+`releases/abs/taxation_revenue_5506.py` (`tax`, topic `government`), 4 chart functions, 4
+charts; stage one matched a same-day notebook run 4 of 4. The workbook parsing it shares
+with 5512 (find a workbook from its Contents sheet, the financial-year header row, short
+units) moved to `sources/abs_workbook.py`; 5512 re-verified 10 of 10 unchanged. Stage two:
+rfooter `ABS: 5506.0`; "Original series." on every lfooter; mgplot line widths.
+Also done 2026-10-05, both stages: `ABS Political` as `topics/political/` (`political`, topic
+`economy`: `common`, `prices`, `labour`, `incomes`, `policy`, `population`), 48 chart
+functions, 59 charts; stage one matched a same-day notebook run 59 of 59 (the five chart
+files were ported in parallel by agents to one spec and checked together). New shared
+pieces, each verified equal to the notebook helpers: `analysis/epochs.py` (the government
+table and `political.py`'s epoch maths), `charting/epochs.py` (`epoch_vlines`),
+`series/productivity.py` (GDP per hour worked spliced back to 1966 over RBA OP8 hours),
+`series.rates.get_interbank_rate` (F1.1, by label), and `analysis.decompose.seasonally_adjust`
+(made public from `series.housing`, which now uses it; house-drawdowns re-verified). Stage
+two: source-rule rfooters; the series type straight after "Australia." in standard wording
+(Original for the CPI, tax and balance; seasonally adjusted for house prices, rents,
+incomes, wages and the wage share); a shorter household-income footer, which cleared a
+collision inherited from the notebook; mgplot line widths (the segments were all 1.5).
+Party colours and the election markers are kept.
+Runner, 2026-10-05: a full run now clears a module's folder only after its `fetch()`
+succeeds (an unreachable source keeps the old charts), and a full topic run empties only
+the folders of modules no longer in the topic, rather than the whole topic folder first.
+New `--check`: a complete run into `scratch/check/` (`paths.CHECK_DIR`, emptied first) that
+never touches `CHARTS/`, for testing which sources can be reached. User guides: `README.md`
+(how-to) and `docs/how-it-works.md` (explainer).
+Not converted, decided 2026-10-05: `ABS Census - Ad Hoc` (dropped from the rebuild);
+`DB.nomics GDP International` (an earlier search for international GDP data: its charts
+are the ones `fred-gdp` and `oecd-gdp` draw, `oecd-gdp` covers all its countries but
+Singapore, and its main source, IMF IFS on DBnomics, stopped at 2025Q1-Q2 when the IMF
+retired IFS, with China and Russia no longer served).
+Also done 2026-10-05, both stages: `ABS Recession` as `topics/recessions.py`
+(`recessions`, topic `economy`: it combines 1364.0.15.003 and 5206.0), 2 chart functions,
+8 charts; stage one matched a same-day notebook run 8 of 8, and the naive recession
+probability print is kept (13%). The notebook joined a set of catalogues for the rfooter,
+whose order can vary by run; the module sorts it. Stage two: colon titles; rfooter
+`ABS: 1364.0.15.003, 5206.0`; lfooters "Australia. Seasonally adjusted." with "Chain volume
+measures." on the GDP charts (replacing a longer note, and a stray double space); mgplot
+colours and widths (the orange recession shading and the summary chart's solid/dashed
+styles kept).
+Also done 2026-10-05, both stages: the three household spending notebooks (`ABS
+Monthly+Quarterly Household Spending`, `ABS Real Household Spending per Adult`,
+`ABS-SDMX-Monthly-Household-Spending-Indicator-5682`) as
+`releases/abs/household_spending_5682/` (`hsi`, topic `economy`: `common`, `headline`,
+`categories`, `per_adult`), 9 chart functions, 76 charts. Stage one matched same-day runs
+of the first two notebooks 41 of 41. New shared getters, each verified equal to the
+notebook: `series.prices.get_monthly_cpi` (monthly SA CPI spliced over the 6484.0
+indicator and the interpolated quarterly CPI, with its splice report) and
+`series.population.get_adult21_monthly` (with `get_smoothed_civ15_gap`); the diagnostic
+prints are kept. The SDMX notebook's unique charts (`categories.py`, 35 charts) were
+rebuilt from the spreadsheets to the conventions and checked by eye against it (same
+data; Tasmania per person differs by $1 in rounding). Stage two: colon titles from the
+category ("Real household spending: ..." for the quarterly chain volume measures;
+renames 30 files); sorted rfooters without a full stop; standard series-type wording;
+`monthly_plot_times` for monthly growth charts (the monthly level line keeps its 3-year
+window) and `quarterly_plot_times` for quarterly charts.
+Also done 2026-10-05, both stages, each matching a same-day notebook run exactly in stage
+one: 5368 International Trade in Goods (`goods`, topic `trade`, 4 charts); 8165 Business
+Entries and Exits (`business-counts`, topic `business`, 4 charts); 6524 Personal Income by
+Remoteness (`income-remoteness`, topic `wages`, 3 charts; its workbooks found from their
+landing pages by the new `sources.abs.landing_page_workbook`); 5601 Lending Indicators
+(`lending`, topics `building` and `business`, 19 charts; the RBA discounted variable rate
+selected by its F5 title, not its series ID). 8165 stays pinned to its jul2020-jun2024
+page: the quarterly TS13 series is published and kept current only there (the
+latest-release page carries just the annual data cube). Stage two: rfooters without table
+numbers (`ABS: 5601.0; RBA: F5`; `ABS: 6524.0.55.002, ASGS Edition 3`); standard
+series-type wording, with "SITC = Standard International Trade Classification." on 5368;
+colon titles in 5601's `fix_title`; `quarterly_plot_times` for 5601's paired charts;
+mgplot colours and widths (5368's stacked bands from `get_color_list`, with the legend
+framed so it reads over them). 6524 now takes its years from the table rather than a
+hardcoded list.
+Also done 2026-10-05, both stages: `Productivity AU vs US` as `topics/au_vs_us.py`
+(`au-vs-us`, topic `international`), 7 chart functions, 9 charts; stage one matched a
+same-day notebook run 9 of 9. All data come through the existing layers (`sources.fred`,
+`sources.dbnomics`, `sources.rba`, `series.rates`, `series.gdp`, `series.prices`), with
+FRED, OECD, EIA and RBA series in label-to-ID tables (the archived 2013 F2 workbook has
+no Title row, so RBA series are by ID). `sources.dbnomics.get_series` gained a
+keyword-only `timeout` (default unchanged), which the EIA electricity series needs at 120
+seconds when DBnomics serves it cold, as the notebook had found. The country colours
+(Australia blue, US dark orange) are kept as a tie across all the charts. Stage two:
+source-rule rfooters (`ABS: 5206.0; DBnomics: OECD PDB; FRED: OPHNFB`, ...); "Seasonally
+adjusted." leading the lfooters that had "SA" mid-sentence; mgplot widths where both
+lines had the same width (the trend charts keep thin trends under thick actuals).
+That completes the `building` topic.
 Package: `au_econ` (project and GitHub repository `au-econ`).
 
 ## 0. Decisions
@@ -399,7 +645,7 @@ Third-party caches:
   | Notebook | What sdmxabs supplies | Replacement |
   |---|---|---|
   | `ABS-SDMX-Monthly-Labour-Force-6202` | LF, LF_HOURS, LF_UNDER flows: headline, hours, underemployment | Same series are in the 6202.0 spreadsheets that `ABS Monthly Labour Force 6202` already reads. Notebook is an SDMX experiment duplicating it; not recreated. Checked 2026-10-04: its only unique charts (not in the labour force, underemployed total and its growth, underutilisation rate) were added to `lfs` from the spreadsheets (Tables 001 and X28) |
-  | `ABS-SDMX-Monthly-Household-Spending-Indicator-5682` | HSI_M / HSI_Q flows; state ERP via `fetch_state_pop` | 5682.0 is already read by `readabs` in two notebooks (`ABS Monthly+Quarterly Household Spending`, `ABS Real Household Spending per Adult`); state ERP from `series.population`. Still to check: that the state-by-category monthly series are in the spreadsheets |
+  | `ABS-SDMX-Monthly-Household-Spending-Indicator-5682` | HSI_M / HSI_Q flows; state ERP via `fetch_state_pop` | 5682.0 is already read by `readabs` in two notebooks (`ABS Monthly+Quarterly Household Spending`, `ABS Real Household Spending per Adult`); state ERP from `series.population`. Checked 2026-10-05: the state-by-category monthly series are in the spreadsheets (tables 5682003-010), so its unique charts (national categories, state totals, spending per person by state) are in `hsi`'s `categories.py`; its headline and quarterly charts duplicate `headline.py` and are not recreated |
   | `ABS Inflation multi-measure` | The CPI `INDEX` codelist: parent links of group / sub-group / class (cached 14 days in `CACHE/ABS_cpi_hierarchy/`) | None: no spreadsheet equivalent. Stays on `sdmxabs.code_list_for("CPI", "INDEX")`, recreated in `sources/abs.py` |
 
   sdmxabs reads `SDMXABS_CACHE_DIR` from the environment at import
@@ -682,3 +928,37 @@ A converted module passes only if it reproduces its notebook's charts:
   different days. Accepted: each folder is the output of its own command.
 - **Import side effects**: a module that fetches at import would make `--list` slow
   and fragile. The contract forbids it.
+
+## 13. After the transition: issues to consider
+
+- **Retrying failed fetches and charts** (raised 2026-10-05). A failing chart is run
+  once: the runner prints the traceback, records the failure and moves on, with no
+  pause, refetch or cache clearing. Rerunning only the chart would not help, as each
+  module fetches once and every chart shares that data; the CME and Yahoo fetches are
+  not cached. Only DBnomics retries (timeouts and server errors, with backoff), and
+  sources read through `http_cache` fall back to their last saved copy. Two places a
+  retry could go: in the sources (CME, Yahoo, oilprice, OPEC retry on timeouts and
+  server errors, as DBnomics does), or in the runner (after a pause, refetch the
+  module's data and rerun its failed charts once, which repeats every other fetch in
+  the module). A retry suits network failures, such as the oilprice.com read timeouts
+  in the launchd error log. It would probably not have saved `energy`'s
+  `gas_forward_curves` on Sunday 2026-10-04: CME answered with a TTF curve none of
+  whose months matched Henry Hub's, the same bad answer a retry would likely get (CME's
+  answer for the latest trade date changed over hours, not seconds). That one needs the
+  CME curve's trade date and months logged, then a fix chosen from the evidence:
+  reject a partial trade date and fall back to the previous one, as
+  `cme.get_settlement_curve` already does for empty dates, or fail with a message
+  naming the curve.
+- **The period of a flow on the y-axis, from the ABS metadata** (raised 2026-10-05). A
+  dollar flow needs its period ("$ Billions/Quarter"); a stock, index, percentage or
+  ratio does not. Today the "/Quarter" is typed by hand (8755, 5625). The ABS metadata
+  can supply it: `mc.dtype` (Data Type) marks each series FLOW, STOCK, STOCK_CLOSE,
+  INDEX, PERCENT, RATIO, AVERAGE or DERIVED, and `mc.freq` gives Quarter, Month or
+  Annual (5625: FLOW 990, RATIO 84; 5232: STOCK_CLOSE 4783, FLOW 4731; 6202: STOCK
+  2868, PERCENT 1848). The idea: add the period where data are prepared for plotting,
+  beside `ra.recalibrate`, so the units string that comes out ("$ Billions/Quarter")
+  is the ylabel as is, and chart functions never add a suffix. Gaps to handle: DERIVED
+  (all of 5206's key aggregates, GDP included, though GDP is a flow), transformed data
+  (a rolling four-quarter sum is still marked FLOW / Quarter but covers a year; a share
+  of GDP is a ratio), and non-ABS sources, which have no Data Type. Each of these needs
+  an explicit override at the preparation step.

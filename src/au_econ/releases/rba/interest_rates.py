@@ -19,7 +19,8 @@ from au_econ.charting.inflation_backplane import (
     BACKPLANE_MONTHLY_LFOOTER,
     inflation_backplane,
 )
-from au_econ.series.rates import get_cash_rate
+from au_econ.charting.windows import quarterly_plot_times
+from au_econ.series.rates import get_cash_rate, get_daily_cash_rate
 from au_econ.sources import rba
 
 # --- module contract
@@ -28,8 +29,8 @@ TOPICS = ("rba",)
 TITLE = "Interest Rates"
 
 # --- constants
-SOURCE = "Source: RBA"
-MONTHS_PER_YEAR, QUARTERS_PER_YEAR, RECENT_YEARS = 12, 4, 5
+SOURCE = "RBA:"  # followed by the table(s), e.g. "RBA: A2, F17"
+MONTHS_PER_YEAR, RECENT_YEARS = 12, 5
 plot_times = 0, -(RECENT_YEARS * MONTHS_PER_YEAR + 1)  # full history, and the most recent five years
 CASH_RATE_NAME = "RBA Official Cash Rate"
 INFLATION_TARGETING_FROM = pd.Period("1993-01-01", freq="M")
@@ -41,13 +42,12 @@ CYCLES = (  # run_plot direction, title word, highlight label(s)
     ("both", "Both", ("Tightening monetary policy", "Easing monetary policy")),
 )
 BACKPLANE_FROM = pd.Period("1993-01", freq="M")
-LINE_WIDTH, THIN_WIDTH = 2, 1.5
 
 # F1.1, F1
 OVERNIGHT_TITLE = "Interbank Overnight Cash Rate"
 SHORT_RATES_1M = ["Cash Rate Target", "EOD 1-month BABs/NCDs"]
 SHORT_RATES_3_6M = ["Cash Rate Target", "EOD 3-month BABs/NCDs", "EOD 6-month BABs/NCDs"]
-short_rate_starts = pd.Period("2022-01-01", freq="D"), pd.Period("2025-01-01", freq="D")
+short_rate_starts = pd.Period("2022-01-01", freq="D"), pd.Period("2026-01-01", freq="D")
 BABS_KEY = "Key: EOD = end of day; BABs/NCDs = Bank Accepted Bills / Negotiable Certificates of Deposit. "
 
 # F17: zero-coupon forward rates
@@ -57,9 +57,9 @@ EN_DASH = chr(0x2013)  # the F17 titles end with an en dash before the horizon, 
 ZC_PALETTE = "cool"
 ZC_MONTHLY_WIDTH, ZC_CASH_RATE_WIDTH, ZC_DAILY_WIDTH, ZC_DAILY_ALPHA = 1, 2.5, 0.2, 0.5
 ZC_LEGEND = {"loc": "upper left", "fontsize": "x-small"}
+ZC_DAILY_CASH_RATE_COLOR, ZC_DAILY_CASH_RATE_WIDTH = "grey", 1
 
 # E13: housing loan payments (some monthly, some quarterly)
-e13_starts = 0, -(RECENT_YEARS * QUARTERS_PER_YEAR + 1)
 SPLIT_TITLE_LENGTH = 50  # longer E13 titles break at their last semicolon
 
 # F5 and F6: lending rates, by RBA series ID
@@ -80,17 +80,22 @@ LENDING_TITLE_WIDTH = 60
 
 @dataclass(frozen=True)
 class RatesData:
-    """The monthly cash rate target, and each RBA table used, as (data, metadata)."""
+    """The monthly and daily cash rate target, and each RBA table used, as (data, metadata)."""
 
     cash_rate: pd.Series
+    daily_cash_rate: pd.Series
     tables: dict[str, tuple[pd.DataFrame, pd.DataFrame]]
 
 
 # --- data
 def fetch() -> RatesData:
-    """Fetch the cash rate and the F1.1, F17, E13, F1, F5 and F6 tables."""
+    """Fetch the monthly and daily cash rate and the F1.1, F17, E13, F1, F5 and F6 tables."""
     tables = {table: rba.get_table(table) for table in ("F1.1", "F17", "E13", "F1", "F5", "F6")}
-    return RatesData(cash_rate=get_cash_rate().rename(CASH_RATE_NAME), tables=tables)
+    return RatesData(
+        cash_rate=get_cash_rate().rename(CASH_RATE_NAME),
+        daily_cash_rate=get_daily_cash_rate().rename(CASH_RATE_NAME),
+        tables=tables,
+    )
 
 
 # --- helpers
@@ -144,7 +149,6 @@ def cash_rate(data: RatesData) -> None:
         drawstyle="steps-post",
         ylabel="Per cent",
         zero_y=True,
-        width=LINE_WIDTH,
         rfooter=f"{SOURCE} A2",
         lfooter=f"Australia. Monthly data to {_last_day(rate.index)}. ",
         pre_tag="a2-",
@@ -154,9 +158,8 @@ def cash_rate(data: RatesData) -> None:
     for direction, word, labels in CYCLES:
         mg.run_plot_finalise(
             since_94,
-            width=LINE_WIDTH,
             direction=direction,
-            title=f"{CASH_RATE_NAME} - {word} Cycles",
+            title=f"{CASH_RATE_NAME}: {word} Cycles",
             ylabel="Per cent",
             rfooter=f"{SOURCE} A2",
             lfooter=f"Australia. Monthly data to {_last_day(since_94.index)}. ",
@@ -187,7 +190,7 @@ def cash_rate_inflation_regime(data: RatesData) -> None:
             lheader=BACKPLANE_LHEADER,
             legend={"loc": "best", "fontsize": "x-small", "ncol": 2},
             lfooter="Australia. Monthly. " + BACKPLANE_MONTHLY_LFOOTER,
-            rfooter=f"{SOURCE} A2; ABS 6401.0",
+            rfooter=f"{SOURCE} A2; ABS: 6401.0",
             pre_tag="a2-",
             tag=f"start{start}",
         )
@@ -204,7 +207,6 @@ def long_run_policy_rate(data: RatesData) -> None:
         drawstyle="steps-post",
         ylabel="Per cent",
         zero_y=True,
-        width=THIN_WIDTH,
         rfooter=f"{SOURCE} F1.1",
         lfooter=f"Australia. Effective overnight cash rate. Monthly data to {_last_day(policy.index)}. ",
         pre_tag="f1-1-",
@@ -218,9 +220,7 @@ def zero_coupon_minmax(data: RatesData) -> None:
     extremes = pd.DataFrame({"Max": curves.max(), "Min": curves.min()})
     mg.line_plot_finalise(
         extremes,
-        color=["darkorange", "cornflowerblue"],
-        width=THIN_WIDTH,
-        title="Zero-coupon Forward Rates - Min/Max over forward 18m",
+        title="Zero-coupon Forward Rates: Min/Max over forward 18m",
         ylabel="Rate (%/year)",
         rfooter=f"{SOURCE} F17",
         lfooter=f"Australia. Daily data. Data to {_last_day(curves.columns)}. ",
@@ -259,7 +259,7 @@ def zero_coupon_monthly(data: RatesData) -> None:
         ax,
         title="EOM Zero-coupon Forward Rates (over forward 18 months)",
         ylabel="Rate (%/year)",
-        rfooter=f"{SOURCE} A2 F17",
+        rfooter=f"{SOURCE} A2, F17",
         lfooter=f"Australia. EOM=End of month. Data to {index[-1].date()}. ",
         legend=ZC_LEGEND,
         pre_tag="f17-",
@@ -267,17 +267,23 @@ def zero_coupon_monthly(data: RatesData) -> None:
 
 
 def zero_coupon_daily(data: RatesData) -> None:
-    """Every day's forward curve, coloured from oldest to newest."""
+    """Every day's forward curve, coloured from oldest to newest, with the daily cash rate."""
     curves = _zero_coupon(data)
+    last_day = _last_day(curves.columns)
     colors = list(sns.color_palette(ZC_PALETTE, len(curves.columns)).as_hex())
+    curves.columns = pd.Index([f"_{column}" for column in curves.columns])  # unlabelled in the legend
     ax = mg.line_plot(curves, color=colors, width=ZC_DAILY_WIDTH, alpha=ZC_DAILY_ALPHA, style="-")
+    ocr = data.daily_cash_rate[data.daily_cash_rate.index >= curves.index.min()]
+    mg.line_plot(
+        ocr, ax=ax, color=[ZC_DAILY_CASH_RATE_COLOR], width=ZC_DAILY_CASH_RATE_WIDTH, drawstyle="steps-post"
+    )
     mg.finalise_plot(
         ax,
         title="Zero-coupon Forward Rates (over forward 18 months)",
         ylabel="Rate (%/year)",
-        rfooter=f"{SOURCE} F17",
-        lfooter=f"Australia. Daily data. Data to {_last_day(curves.columns)}. ",
-        legend=False,
+        rfooter=f"{SOURCE} A2, F17",
+        lfooter=f"Australia. Daily data. Data to {last_day}. ",
+        legend=ZC_LEGEND,
         pre_tag="f17-",
     )
 
@@ -294,14 +300,13 @@ def housing_repayments(data: RatesData) -> None:
             title = "\n".join(title.rsplit(";", 1))
         mg.multi_start(
             series,
-            starts=e13_starts,
+            starts=quarterly_plot_times,
             function=mg.line_plot_finalise,
             pre_tag="e13-",
             title=title,
             ylabel=unit,
             rfooter=f"{SOURCE} E13",
             lfooter=(f"Australia. {row['Type']}. Data to {series.index[-1]}: {series.iloc[-1]:.03f} {unit}. "),
-            width=LINE_WIDTH,
             annotate=True,
         )
 
@@ -316,9 +321,8 @@ def _short_rates(data: RatesData, titles: list[str], *, title: str, annotate: li
         title=title,
         drawstyle="steps-post",
         ylabel="Per cent",
-        rfooter=f"{SOURCE} F1 Daily",
+        rfooter=f"{SOURCE} F1",
         lfooter=BABS_KEY + f"Data to {frame.index[-1]}.",
-        width=LINE_WIDTH,
         pre_tag="f1-",
         annotate=annotate,
     )
@@ -357,7 +361,6 @@ def _lending_charts(data: RatesData, table: str, wanted: dict[str, str], pre_tag
             ylabel=unit,
             rfooter=f"{SOURCE} {table}",
             lfooter=f"Australia. Data to {series.index[-1]}. ",
-            width=LINE_WIDTH,
             pre_tag=pre_tag,
             annotate=True,
         )

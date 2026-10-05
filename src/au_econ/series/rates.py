@@ -5,7 +5,7 @@ from functools import cache
 import pandas as pd
 import readabs as ra
 
-from au_econ.sources.rba import get_historical_table
+from au_econ.sources.rba import get_historical_table, get_table
 
 F11_HISTORY = ("f11hist-1969-2009", "f11hist")  # RBA monthly exchange rate workbooks, earliest first
 F11_1_HISTORY = (  # RBA daily exchange rate workbooks, earliest first; daily data begin December 1983
@@ -21,7 +21,11 @@ F11_1_HISTORY = (  # RBA daily exchange rate workbooks, earliest first; daily da
     "2018-2022",
     "2023-current",
 )
-RBA_SERIES = {"US dollars per Australian dollar": "FXRUSD"}  # label: RBA series ID
+RBA_SERIES = {  # label: RBA series ID
+    "US dollars per Australian dollar": "FXRUSD",
+    "Interbank overnight cash rate, monthly": "FIRMMCRI",
+}
+INTERBANK_TABLE = "F1.1"
 CLOSED = "CLOSED"  # the RBA's entry for a day the market was closed, in either case
 
 
@@ -42,6 +46,39 @@ def get_cash_rate() -> pd.Series:
     rate that blends the old and new targets in any month a decision lands in.
     """
     return _cash_rate().copy()
+
+
+@cache
+def _daily_cash_rate() -> pd.Series:
+    """Fetch the daily cash rate target (cached; not for mutation)."""
+    rate = ra.read_rba_ocr(monthly=False).astype(float)
+    if rate.empty:
+        raise ValueError("RBA A2: no daily cash rate target values")
+    return rate.rename("Cash rate")
+
+
+def get_daily_cash_rate() -> pd.Series:
+    """Return the RBA's announced cash rate target for every calendar day (table A2), to today."""
+    return _daily_cash_rate().copy()
+
+
+@cache
+def _interbank_rate() -> pd.Series:
+    """Fetch the monthly interbank overnight cash rate (cached; not for mutation)."""
+    data, _meta = get_table(INTERBANK_TABLE)
+    rate = data[RBA_SERIES["Interbank overnight cash rate, monthly"]].dropna().astype(float)
+    if rate.empty:
+        raise ValueError(f"RBA {INTERBANK_TABLE}: no interbank overnight cash rate values")
+    return rate.rename("Interbank overnight cash rate")
+
+
+def get_interbank_rate() -> pd.Series:
+    """Return the interbank overnight cash rate, monthly from May 1976 (table F1.1).
+
+    The realised overnight rate, a monthly mean. Unlike the cash rate target, which starts only
+    in August 1990, it measures the policy stance continuously back to the 1970s.
+    """
+    return _interbank_rate().copy()
 
 
 @cache

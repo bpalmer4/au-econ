@@ -14,6 +14,7 @@ TITLE = "ASX Indices"
 LONG_START = "2024-03-20"  # about two years
 BROAD = {"^AORD": "All Ordinaries", "^AXJO": "S&P/ASX 200"}
 SMALL = [("^AXSO", "S&P/ASX Small Ordinaries", "Index")]
+GEOGRAPHY = "Australia. "
 
 
 # --- data
@@ -31,13 +32,13 @@ def broad_indices(data: dict[str, pd.Series]) -> None:
         frame,
         title="ASX Indices: All Ordinaries and S&P/ASX 200",
         ylabel="Index",
-        lfooter=f"Daily close. Data to {last_day(frame)}.",
+        lfooter=f"{GEOGRAPHY}Daily close. Data to {last_day(frame)}.",
     )
 
 
 def small_ordinaries(data: dict[str, pd.Series]) -> None:
     """S&P/ASX Small Ordinaries."""
-    single_charts(data, SMALL, is_futures=False)
+    single_charts(data, SMALL, is_futures=False, geography=GEOGRAPHY)
 
 
 # --- table of contents, in run order

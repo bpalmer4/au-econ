@@ -55,7 +55,7 @@ SOFTS = [
 BCOM_ETN = "DJP"  # iPath Bloomberg Commodity Index Total Return ETN
 IMF_ALL_COMMODITIES = "PALLFNFINDEXM"  # FRED: IMF global price index of all commodities, monthly, 2016 = 100
 IMF_START = "1992-01-01"
-SOURCE_IMF = "Source: IMF via FRED"
+SOURCE_IMF = "IMF: PCPS (via FRED)"  # IMF Primary Commodity Prices
 MONTHS_IN_YEAR, QUARTERS_IN_YEAR = 12, 4
 PERCENT = 100
 COMMODITY_SCALE = 10  # divides commodity price growth onto the CPI scale (it swings about 10-14 times as much)
@@ -192,13 +192,11 @@ def commodities_vs_cpi(data: FuturesData) -> None:
         legend={"loc": "upper left", "fontsize": "x-small"},
         annotate=True,
         rounding=1,
-        width=[1.2, 1.6],
-        color=["steelblue", "crimson"],
         dropna=True,
         y0=True,
         axvspan=spans,
         lfooter=f"CPI plotted at quarter-end months. Shaded: CPI YoY above {CPI_SHADE_ABOVE:.0f}%.",
-        rfooter="Source: IMF via FRED, ABS 6401.0",
+        rfooter=f"{SOURCE_IMF}; ABS: 6401.0",
     )
 
 

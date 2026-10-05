@@ -6,6 +6,10 @@ class RegressionResults:
     params: pd.Series
     bse: pd.Series
     rsquared: float
+    rsquared_adj: float
+    resid: pd.Series
+    def predict(self, exog: pd.DataFrame) -> pd.Series: ...
+    def summary(self) -> Any: ...
 
 class OLS:
     def __init__(self, endog: pd.Series, exog: pd.DataFrame) -> None: ...

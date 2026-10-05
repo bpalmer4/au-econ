@@ -29,7 +29,7 @@ from au_econ.sources.abs import AbsRelease, fetch_release
 
 # --- module contract
 RELEASE = ("5206", "gdp")
-TOPICS = ("activity", "wages", "prices")
+TOPICS = ("economy",)
 TITLE = "National Accounts"
 
 # --- constants
