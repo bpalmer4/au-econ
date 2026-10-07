@@ -19,6 +19,8 @@ from babel.numbers import get_currency_name
 from au_econ.sources import rba
 
 if TYPE_CHECKING:
+    from collections.abc import Hashable
+
     from matplotlib.axes import Axes
 
 # --- module contract
@@ -45,7 +47,15 @@ RECENT_WIDTH = 1.5
 # local highs and lows
 EXTREMES_WINDOW = 150  # days in each search window
 SLIDE_DIVISOR = 2.9  # windows overlap: each starts window / 2.9 days after the last
+CONFIRM_DAYS = 30  # a high or low must hold for this many days each side
 SIGNIFICANT_DIGITS = 3
+
+# the trade-weighted index over a longer span
+TWI_NAME = "Trade-weighted Index"
+TWI_YEARS = 10
+TWI_EXTREMES_WINDOW = 250  # about a year of trading days
+TWI_CONFIRM_DAYS = 60
+TWI_TAG = "-ten-year"
 
 
 @dataclass(frozen=True)
@@ -127,12 +137,21 @@ def _lheader(series: pd.Series, last: pd.Period, first: pd.Period | None = None)
     return ""
 
 
-def _local_extremes(series: pd.Series, window: int = EXTREMES_WINDOW) -> pd.DataFrame:
+def _holds(series: pd.Series, idx: Hashable, days: int, *, highest: bool) -> bool:
+    """Return whether the value at idx is the highest (or lowest) within days each side."""
+    pos = series.index.get_loc(idx)
+    if not isinstance(pos, int):
+        raise TypeError(f"{idx} is not a unique index label")
+    around = series.iloc[max(pos - days, 0) : pos + days + 1]
+    return bool(series.iloc[pos] == (around.max() if highest else around.min()))
+
+
+def _local_extremes(series: pd.Series, window: int = EXTREMES_WINDOW, confirm: int = CONFIRM_DAYS) -> pd.DataFrame:
     """Local highs and lows of a daily series, alternating, plus its endpoint.
 
     Columns: "idx" (Period), "val" and "kind" ("min", "max" or "end"). Each overlapping
-    window contributes its highest and lowest day; a run of the same kind collapses to
-    its most extreme member.
+    window contributes its highest and lowest day, kept only if it holds for confirm
+    days each side; a run of the same kind collapses to its most extreme member.
     """
     if not isinstance(series.index, pd.PeriodIndex):
         raise TypeError("series.index must be a PeriodIndex")
@@ -150,8 +169,8 @@ def _local_extremes(series: pd.Series, window: int = EXTREMES_WINDOW) -> pd.Data
             break
         max_idx.add(selection.idxmax(skipna=True))
         min_idx.add(selection.idxmin())
-    maximums = pd.PeriodIndex(sorted(max_idx))
-    minimums = pd.PeriodIndex(sorted(min_idx))
+    maximums = pd.PeriodIndex(sorted(idx for idx in max_idx if _holds(series, idx, confirm, highest=True)))
+    minimums = pd.PeriodIndex(sorted(idx for idx in min_idx if _holds(series, idx, confirm, highest=False)))
     peaks = pd.DataFrame({"idx": maximums, "val": series[maximums], "kind": "max"}, index=maximums)
     troughs = pd.DataFrame({"idx": minimums, "val": series[minimums], "kind": "min"}, index=minimums)
     extremes = pd.concat([peaks, troughs]).sort_index(ascending=True)
@@ -192,26 +211,66 @@ def _label_extremes(ax: Axes, annotations: pd.DataFrame) -> None:
         ax.text(idx.ordinal, val, f"{val:0.{rounding}f}", va=va, ha=ha, fontsize="x-small")
 
 
+def _labelled_chart(
+    series: pd.Series,
+    title: str,
+    ylabel: str,
+    lheader: str,
+    *,
+    window: int = EXTREMES_WINDOW,
+    confirm: int = CONFIRM_DAYS,
+    tag: str = "",
+) -> None:
+    """Chart a daily exchange rate with its local highs and lows labelled."""
+    ax = mg.line_plot(series, width=RECENT_WIDTH, dropna=False)
+    _label_extremes(ax, _local_extremes(series, window, confirm))
+    mg.finalise_plot(
+        ax,
+        title=title,
+        ylabel=ylabel,
+        lfooter=_lfooter(title, series.index[-1]),
+        lheader=lheader,
+        rfooter=SOURCE,
+        pre_tag=PRE_TAG,
+        tag=tag,
+    )
+
+
 # --- charts
 def short_run_exchange_rates(data: FxData) -> None:
-    """Chart each F11.1 exchange rate since 2023, labelling its local highs and lows."""
+    """Chart each F11.1 exchange rate since 2023, and the trade-weighted index over ten years.
+
+    Each chart labels its local highs and lows; the ten-year chart searches wider windows
+    and confirms each over more days.
+    """
     for series_id in data.current.columns:
         series = pd.to_numeric(data.current[series_id], errors="coerce").sort_index()
         series.name = None
         title = str(data.current_meta.loc[series_id, ra.rba_metacol.desc]).replace(NOTES_SUFFIX, "")
         singular, _ = _currency(title)
         ylabel = singular or str(data.current_meta.loc[series_id, ra.rba_metacol.unit])
-        ax = mg.line_plot(series, width=RECENT_WIDTH, dropna=False)
-        _label_extremes(ax, _local_extremes(series))
-        mg.finalise_plot(
-            ax,
-            title=title,
-            ylabel=ylabel,
-            lfooter=_lfooter(title, series.index[-1]),
-            lheader=_lheader(series, data.current.index[-1], first=data.current.index[0]),
-            rfooter=SOURCE,
-            pre_tag=PRE_TAG,
-        )
+        lheader = _lheader(series, data.current.index[-1], first=data.current.index[0])
+        _labelled_chart(series, title, ylabel, lheader)
+
+    twi_ids = [series_id for series_id, name in data.names.items() if TWI_NAME in name]
+    if len(twi_ids) != 1:
+        raise ValueError(f"expected one {TWI_NAME!r} series in the history, found {twi_ids}")
+    twi_id = twi_ids[0]
+    twi = data.history[twi_id].dropna()
+    twi.name = None
+    start = (twi.index[-1].to_timestamp() - pd.DateOffset(years=TWI_YEARS)).to_period("D")
+    twi = twi[twi.index > start]
+    title = data.names[twi_id]
+    lheader = _lheader(twi, data.history.index[-1])
+    _labelled_chart(
+        twi,
+        title,
+        data.units[twi_id],
+        lheader,
+        window=TWI_EXTREMES_WINDOW,
+        confirm=TWI_CONFIRM_DAYS,
+        tag=TWI_TAG,
+    )
 
 
 def long_run_exchange_rates(data: FxData) -> None:
