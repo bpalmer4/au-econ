@@ -43,6 +43,8 @@ CENSUS_MONTHS = [pd.Period(f"{year}-09", freq="M") for year in (1991, 1996, 2001
 NOM_LABEL = "Net Overseas Migration (4Q rolling sum)"
 PROXY_LABEL = "Net Arrivals Proxy (12m net, 25-term HMA)"
 NET_MIGRATION_LABEL = "Net Migration (ERP growth less natural increase)"
+NOM, NATURAL_INCREASE = "Net Overseas Migration", "Natural Increase"
+ROLLING_LFOOTER = "Australia. Original series. Rolling 4-quarter sums. Natural increase = births - deaths. "
 
 
 # --- helpers
@@ -142,6 +144,7 @@ def population_growth_rate(data: PopulationData) -> None:
         width=[2, 1.5, 1],
         style=["-", "--", "-", ":"],
         y0=True,
+        annotate=True,
         lfooter="Australia. ",
         rfooter=SOURCE_POP,
         pre_tag="multi",
@@ -453,6 +456,54 @@ def nom_vs_erp_growth_less_ni(data: PopulationData) -> None:
     )
 
 
+def nom_and_natural_increase(data: PopulationData) -> None:
+    """Chart NOM against natural increase, both 4-quarter rolling sums.
+
+    Rolling 4-quarter sums rather than seasonally adjusted quarters: the rolling sums were
+    much smoother than the seasonally adjusted series, whose quarters move irregularly.
+    """
+    rolling = pd.DataFrame({NOM: _nom_monthly(), NATURAL_INCREASE: data.growth["Annual Natural Increase"]})
+    rolling, units = recalibrated(rolling, _growth_units(data))
+    multi_start(
+        rolling,
+        function=line_plot_finalise,
+        starts=RECENT,
+        title="Net Overseas Migration and Natural Increase",
+        ylabel=f"{units} / year",
+        dropna=True,
+        y0=True,
+        annotate=True,
+        legend=True,
+        lfooter=ROLLING_LFOOTER,
+        rfooter=SOURCE_3101,
+        pre_tag="multi",
+    )
+
+
+def nom_multiple_of_natural_increase(data: PopulationData) -> None:
+    """Chart NOM as a multiple of natural increase, both 4-quarter rolling sums.
+
+    Rolling 4-quarter sums rather than seasonally adjusted quarters: the ratio of the rolling
+    sums was much smoother (quarter-to-quarter standard deviation 0.07 over 2010-2019) than
+    the ratio of the seasonally adjusted series (about 0.25).
+    """
+    multiple = (_nom_monthly() / data.growth["Annual Natural Increase"]).dropna()
+    multiple.name = "NOM / natural increase"
+    multi_start(
+        multiple,
+        function=line_plot_finalise,
+        starts=RECENT,
+        title="Net Overseas Migration as a Multiple of Natural Increase",
+        ylabel="Multiple",
+        y0=True,
+        annotate=True,
+        axhline={"y": 1, "color": "grey", "linestyle": "--", "linewidth": 1},
+        lfooter=ROLLING_LFOOTER,
+        rfooter=SOURCE_3101,
+        pre_tag="multi",
+    )
+
+
 def erp_growth_less_ni_minus_nom(data: PopulationData) -> None:
     """Chart (ERP growth less natural increase) less NOM: the implied intercensal discrepancy.
 
@@ -502,5 +553,7 @@ CHARTS = (
     (nom_forward_proxy, ()),
     (population_growth_proxy, ()),
     (nom_vs_erp_growth_less_ni, ()),
+    (nom_and_natural_increase, ()),
+    (nom_multiple_of_natural_increase, ()),
     (erp_growth_less_ni_minus_nom, ()),
 )

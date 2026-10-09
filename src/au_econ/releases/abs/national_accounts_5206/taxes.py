@@ -41,7 +41,7 @@ def taxes(release: AbsRelease) -> None:
                 raise ValueError(f"Tax units {tax_units} do not match GDP units {gdp_units}")
             raw = release.data[TAXES][row[mc.id]]
             lfooter = f"{AUSTRALIA}{SA_NOTE}{CP_NOTE}{data_to(raw)}"
-            series, units = ra.recalibrate(raw, f"{tax_units} / Quarter")
+            series, units = ra.recalibrate(raw.dropna(), f"{tax_units} / Quarter")
             title = description.replace(" ;", "")
             multi_start(
                 series,

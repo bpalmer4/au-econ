@@ -64,15 +64,19 @@ def country_group_charts(
     ylabel: str,
     rfooter: str,
     lfooter: str,
-    legend: dict[str, Any] | None = None,
+    legend: bool | dict[str, Any] | None = None,
     axhspan: dict[str, Any] | None = None,
+    axvspan: dict[str, Any] | None = None,
 ) -> None:
     """One line chart per COUNTRY_GROUPS group, of the group's countries present in data.
 
-    Without a legend argument, a chart of more than one line gets mgplot's default legend.
+    A group with none of its countries in data is skipped. Without a legend argument, a
+    chart of more than one line gets mgplot's default legend.
     """
     for tag, group in COUNTRY_GROUPS.items():
         present = sorted(set(group) & set(data.columns), key=COUNTRIES.__getitem__)  # by OECD code
+        if not present:
+            continue
         line_plot_finalise(
             data[present],
             tag=tag,
@@ -86,6 +90,7 @@ def country_group_charts(
             lfooter=lfooter,
             legend=legend if legend is not None else len(present) > 1,
             axhspan=axhspan,  # None draws nothing
+            axvspan=axvspan,
         )
 
 
