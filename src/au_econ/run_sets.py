@@ -12,6 +12,7 @@ TOPICS: dict[str, str] = {
     "business": "Business conditions: profits, inventories and business wages",
     "commodities": "Commodity prices",
     "economy": "The whole economy: national accounts, output, income and productivity",
+    "energy": "Energy prices and markets: crude oil, refined fuels and gas",
     "environment": "Emissions and the environment",
     "equities": "Share markets and stock indices",
     "families": "Families, households and relationships",

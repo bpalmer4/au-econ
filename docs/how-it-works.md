@@ -44,12 +44,53 @@ au-econ/
     variables.py             shared short names for --charts (currently empty)
     sources/                 one file per provider: abs.py, rba.py, fred.py, oecd.py, ...
     series/                  gdp.py, prices.py, population.py, labour.py, rates.py, ...
-    analysis/                decompose.py, henderson.py, epochs.py
+    analysis/                decompose.py, henderson.py, epochs.py, turning_points.py
     charting/                footers.py, windows.py, titles.py, targets.py, ...
     releases/abs/            one module per ABS publication, e.g. labour_force_6202/
     releases/rba/, oecd/, fred/, ...   publications from other providers
     topics/                  cross-source chart sets, e.g. recessions.py, political/
 ```
+
+### What each directory holds
+
+The directories under `src/au_econ/` are layers; the import rules between them are in
+section 4.
+
+- **`sources/`: getting raw data.** One file per provider: `abs.py`, `rba.py`, `fred.py`,
+  `oecd.py`, `yahoo.py`, `eia.py`, `bis.py`, `nyfed.py`, `opec.py`, `bundesbank.py`,
+  `boe.py`, `chinabond.py` and others. Each fetches, caches and parses one provider's data
+  and never combines it with another's. This is the only place that touches URLs.
+  `http_cache.py` is the download cache; `abs_workbook.py` parses the Excel-only GFS and
+  taxation workbooks.
+- **`analysis/`: pure transforms.** Maths that does not care where the data came from:
+  `decompose.py` (seasonal adjustment, with the auto-ARIMA extension), `henderson.py`
+  (Henderson moving averages), `epochs.py` (the table of governments and measures by
+  government), `turning_points.py`.
+- **`series/`: shared economic concepts.** When more than one chart module needs the same
+  concept, it gets a cached getter here: GDP (`gdp.py`), the CPI, wages and deflators
+  (`prices.py`), population and NOM (`population.py`, `nom.py`), the long-run
+  unemployment rate (`labour.py`), productivity, house prices (`housing.py`), the cash rate
+  and the AUD (`rates.py`). A calculation that combines providers also lives here, named
+  for what the result means. Getters are cached for the run and return copies.
+- **`charting/`: shared chart pieces.** The furniture the chart modules share:
+  `footers.py` (standard series-type wording, "data to"), `windows.py`
+  (`quarterly_plot_times` and the other windows), `titles.py`, `targets.py` (CPI target
+  markers), `inflation_backplane.py`, `epochs.py` (vertical lines at changes of
+  government), `international.py`, `daily_prices.py`, `abs_rows.py`, `turning_points.py`.
+- **`releases/`: one module per publication.** The chart modules, grouped by publisher.
+  `abs/` holds the ABS catalogues, each named `<subject>_<catalogue>.py`
+  (`wage_price_index_6345.py`); the big ones are subpackages, such as
+  `consumer_price_index_6401/`, `labour_force_6202/` and `national_accounts_5206/`.
+  `rba/` holds exchange rates, interest rates, bond yields, money and credit, and the SoMP
+  forecasts; `oecd/` unemployment, inflation, population, GDP, business R&D and government
+  debt. Smaller providers have a folder each: `fred/`, `worldbank/`, `bis/`, `nyfed/`,
+  `aip/`, `asic/`, `afsa/`, `dcceew/`.
+- **`topics/`: chart sets that span publications.** Modules tied to no single release,
+  because they combine publications or providers: `recessions.py`, `stagflation.py`,
+  `neutral_rate.py`, `au_vs_us.py`, `bond_yields.py`, `energy_markets.py`,
+  `house_price_drawdowns.py`, `wage_measures.py`, and the `political/` subpackage.
+
+Every module in `releases/` and `topics/` follows the same contract (section 5).
 
 ## 3. What `run.py` does
 

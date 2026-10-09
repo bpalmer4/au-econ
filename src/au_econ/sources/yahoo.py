@@ -11,11 +11,12 @@ import yfinance as yf
 MONTH_CODES = "FGHJKMNQUVXZ"  # CME contract-month codes, January to December
 CURVE_PROBE_SLACK = 6  # extra months probed, to cover expired fronts
 RECENT_HISTORY = "5d"  # enough history to find a contract's latest close
+EARLIEST_START = "1970-01-02"  # before any Yahoo daily history; yfinance's default with no start is one month
 
 
-def get_close(ticker: str, start: str) -> pd.Series:
-    """Return a ticker's daily close from start (YYYY-MM-DD), with a daily PeriodIndex."""
-    raw = yf.download(ticker, start=start, auto_adjust=True, progress=False)
+def get_close(ticker: str, start: str | None) -> pd.Series:
+    """Return a ticker's daily close from start (YYYY-MM-DD), or all of it if None, with a daily PeriodIndex."""
+    raw = yf.download(ticker, start=start or EARLIEST_START, auto_adjust=True, progress=False)
     if raw is None or len(raw) == 0:
         raise ValueError(f"Yahoo Finance returned no data for {ticker}")
     close = raw["Close"].squeeze()

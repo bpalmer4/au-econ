@@ -18,9 +18,11 @@ from au_econ.charting.daily_prices import (
     fetch_closes,
     frame_chart,
     last_day,
+    recent_starts,
     single_charts,
     summarise,
 )
+from au_econ.charting.turning_points import turning_points_plot
 from au_econ.series.prices import get_cpi
 from au_econ.sources import fred
 
@@ -30,7 +32,7 @@ TOPICS = ("commodities",)
 TITLE = "Commodity Futures"
 
 # --- constants
-LONG_START = "2024-03-20"  # about two years
+RECENT_YEARS = 2  # each Yahoo chart is drawn for its full history, then this many years
 METALS = [
     ("GC=F", "Gold", "USD per troy ounce"),
     ("SI=F", "Silver", "USD per troy ounce"),
@@ -38,7 +40,6 @@ METALS = [
     ("PA=F", "Palladium", "USD per troy ounce"),
     ("HG=F", "Copper", "USD per pound"),
     ("TIO=F", "Iron Ore", "USD per tonne"),
-    ("MTF=F", "Coal (API2 Rotterdam)", "USD per tonne"),
 ]
 GRAINS = {"ZW=F": "Wheat", "ZC=F": "Corn"}
 SOFTS = [
@@ -76,12 +77,12 @@ class FuturesData:
 
 # --- data
 def fetch() -> FuturesData:
-    """Fetch every futures close and the commodity ETN from LONG_START, the IMF index and CPI."""
+    """Fetch every futures close and the commodity ETN (their full histories), the IMF index and CPI."""
     tickers = [ticker for ticker, _, _ in METALS] + list(GRAINS) + [ticker for ticker, _, _ in SOFTS] + [BCOM_ETN]
     imf = fred.get_series(IMF_ALL_COMMODITIES, IMF_START)
     imf.index = pd.PeriodIndex(imf.index, freq="M")
     cpi, _, _ = get_cpi("headline_sa")
-    return FuturesData(closes=fetch_closes(tickers, LONG_START), imf_index=imf.dropna(), cpi=cpi)
+    return FuturesData(closes=fetch_closes(tickers, None), imf_index=imf.dropna(), cpi=cpi)
 
 
 # --- helpers
@@ -114,8 +115,8 @@ def _cpi_runs_above(cpi_yoy: pd.Series, threshold: float) -> list[tuple[pd.Perio
 
 # --- charts
 def metals(data: FuturesData) -> None:
-    """Precious and base metals, iron ore and coal: one chart each."""
-    single_charts(data.closes, METALS)
+    """Precious and base metals, and iron ore: one chart each."""
+    single_charts(data.closes, METALS, recent_years=RECENT_YEARS, turning_points=True)
 
 
 def grains(data: FuturesData) -> None:
@@ -127,12 +128,13 @@ def grains(data: FuturesData) -> None:
         title="Grain Futures: Wheat and Corn",
         ylabel="USD cents per bushel",
         lfooter=f"CBOT front-month futures. Data to {last_day(frame)}.",
+        recent_years=RECENT_YEARS,
     )
 
 
 def softs(data: FuturesData) -> None:
     """Soybeans, softs, rice and urea: one chart each."""
-    single_charts(data.closes, SOFTS)
+    single_charts(data.closes, SOFTS, recent_years=RECENT_YEARS, turning_points=True)
 
 
 def commodity_index(data: FuturesData) -> None:
@@ -141,12 +143,13 @@ def commodity_index(data: FuturesData) -> None:
         print(f"{BCOM_ETN}: no data, skipping")
         return
     etn = data.closes[BCOM_ETN]
-    mg.line_plot_finalise(
+    mg.multi_start(
         etn,
+        function=turning_points_plot,
+        starts=recent_starts(etn, RECENT_YEARS),
         title="Bloomberg Commodity Index ETN (DJP)",
         ylabel="USD per note",
         xlabel=None,
-        annotate=True,
         lfooter=(
             "Daily close of the iPath BCOM Total Return ETN: the index plus collateral interest, "
             f"less fees. Data to {last_day(etn)}."

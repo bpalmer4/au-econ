@@ -96,8 +96,9 @@ connection.
 ## The weekly job
 
 A launchd job (`~/Library/LaunchAgents/com.bryanpalmer.yahoo-commodities-update.plist`)
-runs `yahoo-commodities-update.sh` every Sunday at 08:00. That runs `energy`, `yahoo` and
-`asx` in turn, so their charts land in `CHARTS/energy - Energy Markets/`,
+runs `yahoo-commodities-update.sh` every Sunday at 08:00. That runs the `energy` topic
+(`aip` and `energy-markets`), then `yahoo` and `asx`, so their charts land in
+`CHARTS/energy/aip - Fuel Terminal Gate Prices/`, `CHARTS/energy/energy-markets - Energy Markets/`,
 `CHARTS/yahoo - Commodity Futures/` and `CHARTS/asx - ASX Indices/`. Its output and errors
 go to `LOGS/yahoo-commodities-log.log` and `LOGS/yahoo-commodities-err.log`. It runs only
 while you are logged in; if the Mac was asleep at 08:00, launchd runs it when the Mac wakes.

@@ -12,7 +12,7 @@ from au_econ.sources import aip
 
 # --- module contract
 RELEASE = ("aip",)
-TOPICS = ("commodities", "prices")
+TOPICS = ("commodities", "energy", "prices")
 TITLE = "Fuel Terminal Gate Prices"
 
 # --- constants

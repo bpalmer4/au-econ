@@ -21,8 +21,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 # --- module contract
-RELEASE = ("energy",)
-TOPICS = ("commodities",)
+RELEASE = ("energy-markets",)
+TOPICS = ("commodities", "energy")
 TITLE = "Energy Markets"
 
 # --- constants

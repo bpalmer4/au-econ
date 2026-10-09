@@ -6,9 +6,7 @@ with text ("Closed", "CLOSED", " --", ""), which become missing values.
 """
 
 # --- dependencies
-import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import mgplot as mg
 import numpy as np
@@ -16,12 +14,9 @@ import pandas as pd
 import readabs as ra
 from babel.numbers import get_currency_name
 
+from au_econ.analysis.turning_points import local_extremes
+from au_econ.charting.turning_points import label_extremes
 from au_econ.sources import rba
-
-if TYPE_CHECKING:
-    from collections.abc import Hashable
-
-    from matplotlib.axes import Axes
 
 # --- module contract
 RELEASE = ("rba-fx",)
@@ -46,9 +41,7 @@ RECENT_WIDTH = 1.5
 
 # local highs and lows
 EXTREMES_WINDOW = 150  # days in each search window
-SLIDE_DIVISOR = 2.9  # windows overlap: each starts window / 2.9 days after the last
 CONFIRM_DAYS = 30  # a high or low must hold for this many days each side
-SIGNIFICANT_DIGITS = 3
 
 # the trade-weighted index over a longer span
 TWI_NAME = "Trade-weighted Index"
@@ -137,80 +130,6 @@ def _lheader(series: pd.Series, last: pd.Period, first: pd.Period | None = None)
     return ""
 
 
-def _holds(series: pd.Series, idx: Hashable, days: int, *, highest: bool) -> bool:
-    """Return whether the value at idx is the highest (or lowest) within days each side."""
-    pos = series.index.get_loc(idx)
-    if not isinstance(pos, int):
-        raise TypeError(f"{idx} is not a unique index label")
-    around = series.iloc[max(pos - days, 0) : pos + days + 1]
-    return bool(series.iloc[pos] == (around.max() if highest else around.min()))
-
-
-def _local_extremes(series: pd.Series, window: int = EXTREMES_WINDOW, confirm: int = CONFIRM_DAYS) -> pd.DataFrame:
-    """Local highs and lows of a daily series, alternating, plus its endpoint.
-
-    Columns: "idx" (Period), "val" and "kind" ("min", "max" or "end"). Each overlapping
-    window contributes its highest and lowest day, kept only if it holds for confirm
-    days each side; a run of the same kind collapses to its most extreme member.
-    """
-    if not isinstance(series.index, pd.PeriodIndex):
-        raise TypeError("series.index must be a PeriodIndex")
-    if not series.index.is_unique or not series.index.is_monotonic_increasing:
-        raise ValueError("series.index must be unique and increasing")
-
-    max_idx, min_idx = set(), set()
-    slide = int(window / SLIDE_DIVISOR)
-    minimum_window = int(window / 2)
-    for i in range(0, len(series), slide):
-        selection = series.iloc[i : i + window]
-        if selection.isna().all():
-            continue
-        if len(selection) < minimum_window:
-            break
-        max_idx.add(selection.idxmax(skipna=True))
-        min_idx.add(selection.idxmin())
-    maximums = pd.PeriodIndex(sorted(idx for idx in max_idx if _holds(series, idx, confirm, highest=True)))
-    minimums = pd.PeriodIndex(sorted(idx for idx in min_idx if _holds(series, idx, confirm, highest=False)))
-    peaks = pd.DataFrame({"idx": maximums, "val": series[maximums], "kind": "max"}, index=maximums)
-    troughs = pd.DataFrame({"idx": minimums, "val": series[minimums], "kind": "min"}, index=minimums)
-    extremes = pd.concat([peaks, troughs]).sort_index(ascending=True)
-    extremes = extremes[~extremes.index.duplicated(keep="last")]
-
-    extremes["group"] = (extremes["kind"] != extremes["kind"].shift(1)).cumsum()
-    reduced = extremes.groupby(["group", "kind"])["val"].agg(["min", "max", "idxmin", "idxmax"]).reset_index()
-    annotations = pd.concat(
-        [
-            reduced[reduced["kind"] == "min"][["idxmin", "min", "kind"]].rename(
-                columns={"idxmin": "idx", "min": "val"}
-            ),
-            reduced[reduced["kind"] == "max"][["idxmax", "max", "kind"]].rename(
-                columns={"idxmax": "idx", "max": "val"}
-            ),
-        ]
-    ).sort_values(by="idx")
-    annotations.index = pd.Index(annotations["idx"])
-
-    end = series.index[-1]
-    if annotations.index[-1] == end:
-        kinds = annotations["kind"].tolist()
-        kinds[-1] = "end"
-        return annotations.assign(kind=kinds)
-    last = pd.DataFrame({"idx": [end], "val": [series.iloc[-1]], "kind": ["end"]}, index=pd.Index([end]))
-    return pd.concat([annotations, last])
-
-
-def _label_extremes(ax: Axes, annotations: pd.DataFrame) -> None:
-    """Write each local high above, each low below, and the endpoint to the right."""
-    rounding = max(SIGNIFICANT_DIGITS - math.floor(math.log10(annotations["val"].min())), 0)
-    for idx, val, kind in zip(annotations["idx"], annotations["val"], annotations["kind"], strict=True):
-        if not isinstance(idx, pd.Period):
-            raise TypeError(f"annotation index {idx!r} is not a Period")
-        va, ha = "center", "left"
-        if kind in ("min", "max"):
-            va, ha = ("top" if kind == "min" else "bottom"), "center"
-        ax.text(idx.ordinal, val, f"{val:0.{rounding}f}", va=va, ha=ha, fontsize="x-small")
-
-
 def _labelled_chart(
     series: pd.Series,
     title: str,
@@ -223,7 +142,7 @@ def _labelled_chart(
 ) -> None:
     """Chart a daily exchange rate with its local highs and lows labelled."""
     ax = mg.line_plot(series, width=RECENT_WIDTH, dropna=False)
-    _label_extremes(ax, _local_extremes(series, window, confirm))
+    label_extremes(ax, local_extremes(series, window, confirm))
     mg.finalise_plot(
         ax,
         title=title,
