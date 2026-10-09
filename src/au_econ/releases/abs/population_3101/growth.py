@@ -25,7 +25,13 @@ from au_econ.releases.abs.population_3101.common import (
     PopulationData,
     recalibrated,
 )
-from au_econ.series.nom import get_nom, get_nom_forward_proxy, get_population_growth_proxy
+from au_econ.series.nom import (
+    get_civ15_migration_split,
+    get_nom,
+    get_nom_by_age,
+    get_nom_forward_proxy,
+    get_population_growth_proxy,
+)
 from au_econ.series.population import get_erp
 
 # --- constants
@@ -44,6 +50,7 @@ NOM_LABEL = "Net Overseas Migration (4Q rolling sum)"
 PROXY_LABEL = "Net Arrivals Proxy (12m net, 25-term HMA)"
 NET_MIGRATION_LABEL = "Net Migration (ERP growth less natural increase)"
 NOM, NATURAL_INCREASE = "Net Overseas Migration", "Natural Increase"
+CIV15_SHARE_LABELS = ("Migration 15+", "Counting child migrants turning 15")
 ROLLING_LFOOTER = "Australia. Original series. Rolling 4-quarter sums. Natural increase = births - deaths. "
 
 
@@ -431,6 +438,85 @@ def population_growth_proxy(_data: PopulationData) -> None:
     )
 
 
+def _runs(periods: pd.PeriodIndex) -> list[tuple[pd.Period, pd.Period]]:
+    """Group sorted periods into runs of consecutive periods: (first, last) for each run."""
+    runs: list[tuple[pd.Period, pd.Period]] = []
+    for period in periods:
+        if runs and period == runs[-1][1] + 1:
+            runs[-1] = (runs[-1][0], period)
+        else:
+            runs.append((period, period))
+    return runs
+
+
+def civ15_migration_share(_data: PopulationData) -> None:
+    """Chart the share of civilian population 15+ annual growth attributable to migration, two ways.
+
+    Migration 15+ alone, and with the 15-year-olds who arrived as child migrants (who the
+    split counts in natural increase, as ageing in). Quarters with negative 15+ migration are
+    blanked and shaded: when migration and natural increase have opposite signs, the ratio is
+    not a share. Complete civ15 quarters only.
+    """
+    growth, migration, migrant_15s, last_complete = get_civ15_migration_split()
+    alone, counted = CIV15_SHARE_LABELS
+    share = (
+        pd.DataFrame({alone: migration / growth * PERCENT, counted: (migration + migrant_15s) / growth * PERCENT})
+        .loc[:last_complete]
+        .dropna(how="all")  # each line from its own start: births, so the second, begin in 1981
+    )
+    negative = migration.reindex(share.index).lt(0)
+    negative_index = share.index[negative]
+    if not isinstance(negative_index, pd.PeriodIndex):
+        raise TypeError("Expected a quarterly PeriodIndex for the civ15 migration share")
+    share[negative] = float("nan")
+    spans = [
+        {"xmin": first, "xmax": last, "color": "mistyrose", "alpha": 0.6} for first, last in _runs(negative_index)
+    ]
+    multi_start(
+        share,
+        function=line_plot_finalise,
+        starts=quarterly_plot_times,
+        title="Migration Share of Civilian Population 15+ Growth",
+        ylabel="Per cent of annual growth",
+        dropna=False,
+        annotate=True,
+        rounding=0,
+        y0=True,
+        legend=True,
+        axvspan=spans,
+        rheader="Migration 15+ = civ15 growth - 15yo ageing-in + 15+ deaths. "
+        "Child migrants turning 15 = 15yo - births 15 years before",
+        lfooter="Australia. Original series. Year-on-year growth, quarterly. "
+        "Quarters with negative net migration excluded. ",
+        rfooter=SOURCE_3101_6202,
+        pre_tag="multi",
+    )
+
+
+def nom_by_age(_data: PopulationData) -> None:
+    """Chart official NOM and its split into aged 15+ and aged 14 and under."""
+    split, last_age = get_nom_by_age()
+    nom, _units, _stype = get_nom()
+    frame = pd.concat([nom.rename("Net Overseas Migration").reindex(split.index), split], axis=1)
+    multi_start(
+        frame,
+        function=line_plot_finalise,
+        starts=quarterly_plot_times,
+        title="Net Overseas Migration by Age",
+        ylabel="Persons per year ('000)",
+        annotate=True,
+        rounding=0,
+        y0=True,
+        legend=True,
+        axvline={"x": last_age, "color": "grey", "linestyle": ":", "linewidth": 1},
+        rheader="Aged 14 and under: cohort change in ERP by single year of age",
+        lfooter="Australia. Orig. 4Q rolling sums. 15+ = NOM less 14 and under. "
+        "After grey line (last ERP by age): child share of growth held. ",
+        rfooter=SOURCE_3101_6202,
+        pre_tag="multi",
+    )
+
+
 def nom_vs_erp_growth_less_ni(data: PopulationData) -> None:
     """Chart NOM against ERP growth less natural increase, over the full history."""
     frame = pd.DataFrame(
@@ -552,6 +638,8 @@ CHARTS = (
     (migration_share_of_growth, ()),
     (nom_forward_proxy, ()),
     (population_growth_proxy, ()),
+    (civ15_migration_share, ()),
+    (nom_by_age, ()),
     (nom_vs_erp_growth_less_ni, ()),
     (nom_and_natural_increase, ()),
     (nom_multiple_of_natural_increase, ()),

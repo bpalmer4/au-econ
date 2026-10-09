@@ -1,25 +1,27 @@
 """Net Overseas Migration (3101.0): the official series, through the year, and a timely forward proxy.
 
+The proxy rests on a split of civilian population 15+ (6202.0) growth into 15+ natural
+increase and 15+ migration, which is also available on its own.
+
 The getters are cached for the run and return copies, so a caller changing a series
 cannot corrupt the cache.
 """
 
 from functools import cache
-from typing import TYPE_CHECKING
+from math import isnan
 
 import readabs as ra
-from pandas import Period, PeriodIndex
+from pandas import DataFrame, Period, PeriodIndex, Series
 from readabs import metacol as mc
 
 from au_econ.series.population import complete_trailing_quarter, erp_age_sum, get_civ15, interp_june
-
-if TYPE_CHECKING:
-    from pandas import DataFrame, Series
 
 NOM_CATALOGUE = "3101.0"
 NOM_TABLE = "310101"
 NOM_DID = "Net Overseas Migration ;  Australia ;"
 DEATHS_DID = "Deaths ;  Australia ;"
+BIRTHS_DID = "Births ;  Australia ;"
+COHORT_AGE = 15  # civ15's youngest age: the cohort ageing in each year
 NATURAL_INCREASE_DID = "Natural Increase ;  Australia ;"
 ERP_CHANGE_DID, ERP_CHANGE_UNIT = "ERP Change Over Previous Year ;  Australia ;", "000"  # unit: not the % change
 NOM_STYPE = "Original"  # 310101 is published Original only
@@ -63,17 +65,21 @@ def get_nom() -> tuple[Series, str, str]:
 
 
 # --- the 6202-based forward proxy
+def _aged(min_age: int) -> Series:
+    """ERP aged min_age and over, '000, at June."""
+    return erp_age_sum(min_age) / THOUSAND
+
+
 @cache
-def _forward_proxy() -> tuple[Series, Series, Period, Period]:
-    """Build the forward proxy for NOM (cached; not for mutation).
+def _civ15_split() -> tuple[Series, Series, Period]:
+    """Split civ15 year-on-year growth into 15+ natural increase and 15+ migration (cached; not for mutation).
 
-    proxy = civ15 year-on-year growth - 15-year-olds ageing in + 15+ deaths + child migration
+    migration 15+ = civ15 growth - 15-year-olds ageing in + 15+ deaths
 
-    Deaths are added back because in a headcount a death looks like an emigration. Child
-    migration (0-14 cohort survival, 3101.0) is observed while ERP by age exists, then
-    extended by its median ratio to civ15 growth. civ15 is monthly, so a part-filled final
-    quarter is completed before differencing; quarters after `last_complete` rest on
-    extrapolated months.
+    Deaths are added back because in a headcount a death looks like an emigration. civ15 is
+    monthly, so a part-filled final quarter is completed before differencing; quarters after
+    `last_complete` rest on extrapolated months. Returns (civ15 growth, migration 15+,
+    last complete civ15 quarter).
     """
     civ15, _ = get_civ15()
     months_in_quarter = civ15.resample("Q").count()
@@ -85,25 +91,74 @@ def _forward_proxy() -> tuple[Series, Series, Period, Period]:
     growth_index = growth.index
     if not isinstance(growth_index, PeriodIndex):
         raise TypeError("Expected a quarterly PeriodIndex for civ15 growth")
+    if not isinstance(last_complete, Period):
+        raise TypeError("Expected a quarterly Period for the last complete civ15 quarter")
 
-    def aged(min_age: int) -> Series:
-        return erp_age_sum(min_age) / THOUSAND  # persons -> '000, at June
-
-    fifteen_year_olds = aged(15) - aged(16)
-    child_migration_yearly = ((aged(1) - aged(16)) - (aged(0) - aged(15)).shift(1)).dropna()
-    ageing_in = interp_june(fifteen_year_olds, growth_index)
-    child_migration_observed = interp_june(child_migration_yearly, growth_index)
-
+    ageing_in = interp_june(_aged(15) - _aged(16), growth_index)
     deaths, _deaths_units = _rolling_annual(DEATHS_DID)
-    nom, _units = _nom()
     natural_increase = (ageing_in - deaths).ffill()  # ageing in less deaths
-    migration_15_plus = growth - natural_increase
+    return growth, growth - natural_increase, last_complete
+
+
+@cache
+def _migrant_ageing_in() -> Series:
+    """15-year-olds who arrived as child migrants, '000 a year, on civ15's quarters (cached; not for mutation).
+
+    Each June, the 15-year-olds less the births of the year to June COHORT_AGE years earlier:
+    the cohort's net child migration, less its child deaths (so slightly understated). Spread
+    between Junes and held after the latest, as the ageing-in term is.
+    """
+    growth, _migration_15_plus, _last_complete = _civ15_split()
+    growth_index = growth.index
+    if not isinstance(growth_index, PeriodIndex):
+        raise TypeError("Expected a quarterly PeriodIndex for civ15 growth")
+    births, _units = _rolling_annual(BIRTHS_DID)
+    fifteen_year_olds = _aged(COHORT_AGE) - _aged(COHORT_AGE + 1)
+    migrants: dict[Period, float] = {}
+    for june, cohort in fifteen_year_olds.items():
+        if not isinstance(june, Period):
+            raise TypeError("Expected a PeriodIndex on ERP by age")
+        birth_year = Period(year=june.year - COHORT_AGE, quarter=2, freq="Q-DEC")
+        cohort_births = births.get(birth_year)
+        if isinstance(cohort_births, float) and not isnan(cohort_births):
+            migrants[june] = float(cohort) - cohort_births
+    if not migrants:
+        raise ValueError("No June with both 15-year-olds and births 15 years earlier")
+    return interp_june(Series(migrants, dtype=float), growth_index)
+
+
+@cache
+def _child_migration() -> tuple[Series, Period]:
+    """Net child migration, quarterly through the year ('000 a year), and its last observed quarter (cached).
+
+    Observed by cohort survival while ERP by age exists (those aged 1-15 each June less those
+    aged 0-14 a June earlier: children 14 and under, net of their few deaths), spread onto
+    civ15's quarters between Junes, then extended by its median ratio to civ15 growth.
+    """
+    growth, _migration_15_plus, _last_complete = _civ15_split()
+    growth_index = growth.index
+    if not isinstance(growth_index, PeriodIndex):
+        raise TypeError("Expected a quarterly PeriodIndex for civ15 growth")
+    child_migration_yearly = ((_aged(1) - _aged(16)) - (_aged(0) - _aged(15)).shift(1)).dropna()
+    child_migration_observed = interp_june(child_migration_yearly, growth_index)
 
     last_age = Period(f"{child_migration_yearly.index[-1].year}Q2", freq="Q-DEC")
     ratio = (child_migration_observed.loc[:last_age] / growth.loc[:last_age]).dropna().median()
     child_migration = child_migration_observed.copy()
     later = child_migration.index > last_age
     child_migration[later] = ratio * growth[later]
+    return child_migration, last_age
+
+
+@cache
+def _forward_proxy() -> tuple[Series, Series, Period, Period]:
+    """Build the forward proxy for NOM (cached; not for mutation).
+
+    proxy = civ15 migration 15+ (see _civ15_split) + child migration (see _child_migration)
+    """
+    _growth, migration_15_plus, last_complete = _civ15_split()
+    child_migration, _last_age = _child_migration()
+    nom, _units = _nom()
 
     proxy = (migration_15_plus + child_migration).dropna()
     if proxy.empty:
@@ -125,6 +180,34 @@ def get_nom_forward_proxy() -> tuple[Series, Series, Period, Period]:
     """
     proxy, nom, last_official, last_complete = _forward_proxy()
     return proxy.copy(), nom.copy(), last_official, last_complete
+
+
+def get_civ15_migration_split() -> tuple[Series, Series, Series, Period]:
+    """Return (civ15 annual growth, of which migration 15+, migrant 15-year-olds, last complete civ15 quarter).
+
+    The series are quarterly through-the-year counts ('000 a year), from the same split as
+    the NOM forward proxy, without its child migration: children are not in civ15. Migrant
+    15-year-olds (see _migrant_ageing_in) sit inside the split's natural increase, as part of
+    the ageing-in cohort. The civ15 level steps at each ERP benchmark, and quarters after the
+    last complete one rest on extrapolated months.
+    """
+    growth, migration_15_plus, last_complete = _civ15_split()
+    return growth.copy(), migration_15_plus.copy(), _migrant_ageing_in().copy(), last_complete
+
+
+def get_nom_by_age() -> tuple[DataFrame, Period]:
+    """Return (official NOM split by age, last quarter of observed child migration).
+
+    Quarterly through-the-year counts ('000 a year): aged 14 and under is the forward proxy's
+    child migration (see _child_migration), aged 15+ is official NOM less it, and the two sum
+    to official NOM. After the returned quarter, child migration is extended, not observed.
+    """
+    nom, _units = _nom()
+    child, last_age = _child_migration()
+    frame = DataFrame({"Aged 14 and under": child, "Aged 15+": nom - child}).dropna()
+    if frame.empty:
+        raise ValueError("No quarters with both official NOM and child migration")
+    return frame, last_age
 
 
 # --- total population growth, forward

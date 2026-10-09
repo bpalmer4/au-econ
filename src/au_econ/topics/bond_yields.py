@@ -2,7 +2,10 @@
 
 The five markets are the US, Japan, Germany, the UK and Australia (10-year only). France
 has charts of its own: its 10- and 30-year yields, its 10-year against Germany's, and
-France less Germany. Each country's line begins when its data begins. The series are not
+France less Germany. Germany, France, Italy and Spain have 10-year benchmark yields from a
+single source (Investing.com) from February 1994, when all four become continuous, and
+France, Italy and Spain less Germany on the same basis.
+Each country's line begins when its data begins. The series are not
 computed identically: US and French yields are constant maturity, Japan's are benchmark
 bond yields, Germany's, the UK's and China's are fitted curves, and Australia's are the
 RBA's interpolated yields. Publication lags differ, so each chart's footer gives every
@@ -15,8 +18,9 @@ from typing import TYPE_CHECKING
 
 import mgplot as mg
 import pandas as pd
+from mgplot.utilities import get_color_list
 
-from au_econ.sources import banque_de_france, boe, bundesbank, chinabond, mof, rba, yahoo
+from au_econ.sources import banque_de_france, boe, bundesbank, chinabond, investing, mof, rba, yahoo
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -59,6 +63,8 @@ ABBREVIATIONS = {  # for the footer, which names every series at once
     "Australia": "AU",
     "China": "CN",
     "France": "FR",
+    "Italy": "IT",
+    "Spain": "ES",
 }
 SOURCES = {  # each country's source, for the right footer
     "United States": "Yahoo",
@@ -103,17 +109,29 @@ FRANCE_GERMANY_SPREAD_NOTE = (
     "Banque de France constant maturity 10-year yield less the Bundesbank fitted-curve "
     "yield: the same tenor, but not identically computed"
 )
+EURO_TENOR = "10-year"
+EURO_CODES = {  # Investing.com instrument IDs for 10-year benchmark yields; Germany first, the spread base
+    "Germany": 23693,
+    "France": 23778,
+    "Italy": 23738,
+    "Spain": 23806,
+}
+EURO_START = "1994-02-02"  # Spain opens and France resumes after a gap from May 1990: all four continuous
+EURO_SOURCE = "Investing.com"
+EURO_NOTE = "Benchmark bond yields, all from one source"
+EURO_SPREAD_NOTE = "Each benchmark 10-year yield less Germany's, on days both traded"
 RBA_CURRENT_TABLE, RBA_HISTORY_TABLE = "F2", "Z:F2-Daily-2013"  # the RBA split its daily yields in 2013
 
 
 @dataclass(frozen=True)
 class BondYields:
-    """Daily yields (per cent): per tenor by country; China and US; France by tenor; France and Germany."""
+    """Daily yields (per cent): per tenor; China and US; France by tenor; France and Germany; euro benchmarks."""
 
     tenors: dict[str, pd.DataFrame]
     china_us: pd.DataFrame
     france: pd.DataFrame
     france_germany: pd.DataFrame
+    euro: pd.DataFrame
 
 
 # --- data
@@ -178,14 +196,23 @@ def _france() -> pd.DataFrame:
     return frame
 
 
+def _euro() -> pd.DataFrame:
+    """Euro-area benchmark 10-year yields, countries as columns, on a common daily index from EURO_START."""
+    frame = pd.DataFrame({country: investing.get_history(code) for country, code in EURO_CODES.items()})
+    frame = frame[frame.index >= pd.Period(EURO_START, freq="D")]
+    _report(EURO_TENOR, frame)
+    return frame
+
+
 def fetch() -> BondYields:
-    """Fetch every tenor, China against the US, France, and France against Germany."""
+    """Fetch every tenor, China against the US, France, France against Germany, and the euro benchmarks."""
     tenors = {name: _tenor(name, codes, TENOR_STARTS[name]) for name, codes in CODES.items()}
     return BondYields(
         tenors=tenors,
         china_us=_tenor(CHINA_US_TENOR, CHINA_US_CODES, CHINA_US_START),
         france=_france(),
         france_germany=_tenor(FRANCE_GERMANY_TENOR, FRANCE_GERMANY_CODES, FRANCE_START),
+        euro=_euro(),
     )
 
 
@@ -243,6 +270,29 @@ def _yields_chart(name: str, data: pd.DataFrame, note: str) -> None:
     _yield_lines(data, title, _source_footer(data), note)
 
 
+def _spread_lines(
+    spreads: pd.DataFrame, *, color: list[str], title: str, note: str, lfooter: str, rfooter: str
+) -> None:
+    """Spread lines over the full history and the recent window; a legend only for several spreads."""
+    mg.multi_start(
+        spreads,
+        function=mg.line_plot_finalise,
+        starts=plot_times,
+        title=title,
+        ylabel="Percentage points",
+        xlabel=None,
+        width=1,
+        color=color,
+        annotate=True,
+        rounding=2,
+        legend={"loc": "best", "fontsize": "small"} if len(spreads.columns) > 1 else False,
+        y0=True,
+        rheader=note,
+        lfooter=lfooter,
+        rfooter=rfooter,
+    )
+
+
 def _spread_chart(tenor: str, yields: pd.DataFrame, note: str) -> None:
     """First column's yield less the second's, on days both markets traded (no spread against a stale yield)."""
     first, second = (str(country) for country in yields.columns)
@@ -250,19 +300,11 @@ def _spread_chart(tenor: str, yields: pd.DataFrame, note: str) -> None:
     if pair.empty:
         raise ValueError(f"No {tenor} days on which both {first} and {second} traded")
     legs = f"{_title_countries([first])} less {_title_countries([second])}"
-    mg.multi_start(
-        pair[first] - pair[second],
-        function=mg.line_plot_finalise,
-        starts=plot_times,
+    _spread_lines(
+        (pair[first] - pair[second]).to_frame(),
+        color=get_color_list(1),
         title=f"{legs}: {tenor} Government Bond Spread",
-        ylabel="Percentage points",
-        xlabel=None,
-        width=1,
-        annotate=True,
-        rounding=2,
-        legend=False,
-        y0=True,
-        rheader=note,
+        note=note,
         lfooter=_data_to_footer(pair),
         rfooter=_source_footer(pair),
     )
@@ -304,6 +346,28 @@ def france_germany_spread(data: BondYields) -> None:
     _spread_chart(FRANCE_GERMANY_TENOR, data.france_germany, FRANCE_GERMANY_SPREAD_NOTE)
 
 
+def euro_yields(data: BondYields) -> None:
+    """Germany, France, Italy and Spain benchmark 10-year yields, from one source."""
+    title = f"{_title_countries(list(data.euro.columns))}: {EURO_TENOR} Government Bond Yields"
+    _yield_lines(data.euro, title, EURO_SOURCE, EURO_NOTE)
+
+
+def euro_spreads(data: BondYields) -> None:
+    """France, Italy and Spain less Germany at ten years, each on days both markets traded."""
+    base, *others = (str(country) for country in data.euro.columns)
+    spreads = pd.DataFrame({country: data.euro[country] - data.euro[base] for country in others}).dropna(how="all")
+    if spreads.empty:
+        raise ValueError(f"No {EURO_TENOR} days on which {base} and another market both traded")
+    _spread_lines(
+        spreads,
+        color=get_color_list(len(data.euro.columns))[1:],  # each country keeps its colour from euro_yields
+        title=f"{_title_countries(others)} less {base}: {EURO_TENOR} Government Bond Spreads",
+        note=EURO_SPREAD_NOTE,
+        lfooter=_data_to_footer(spreads),
+        rfooter=EURO_SOURCE,
+    )
+
+
 # --- table of contents, in run order
 CHARTS = (
     (yields_10_year, ()),
@@ -313,4 +377,6 @@ CHARTS = (
     (france, ()),
     (france_germany, ()),
     (france_germany_spread, ()),
+    (euro_yields, ()),
+    (euro_spreads, ()),
 )
