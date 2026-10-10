@@ -3,12 +3,8 @@ name = "au-econ"
 version = "0.0.0"
 description = "Capture and plot data from the ABS and the RBA"
 readme = "README.md"
-requires-python = ">=3.14,<3.15"
+requires-python = ">=3.14"
 dependencies = [
-    # - Jupyter notebooks
-    "ipykernel",
-    "ipywidgets",
-    "watermark",
     # - system
     "typing",
     # - bespoke
@@ -37,7 +33,6 @@ dependencies = [
     "selenium",
     "playwright",
     # - code
-    "nbqa",
     "black",
     "pylint",
     "ruff",
@@ -48,23 +43,20 @@ dependencies = [
     "types-selenium",
     "types-seaborn",
     "types-tabulate",
-    "nbconvert>=7.17.0",
     "curl-cffi>=0.15.0",
     "defusedxml>=0.7.1",
     "types-defusedxml>=0.7.0.20260504",
 ]
 
 [build-system]
-requires = ["uv_build>=0.12.20,<0.13"]
+requires = ["uv_build"]
 build-backend = "uv_build"
 
 [tool.ruff]
 line-length=115
-# the helper modules (abs_*, decompose, henderson, political, common) live in
-# notebooks/, so ruff must look there to classify them as first-party; without
-# this isort lumps them in with pandas and readabs and wants the local imports
-# interleaved with the third-party ones. src/ holds the au_econ package.
-src = ["src", "notebooks", "."]
+src = ["src", "."]
+# ruff 0.17 formats Python blocks in Markdown; the docs' examples keep their hand-aligned comments
+format.exclude = ["*.md"]
 lint.select = [ "ALL" ]  # Aggresively select all rules
 lint.ignore = [
     # --- general rules to ignore
@@ -80,25 +72,12 @@ lint.ignore = [
     "FBT003",  # Boolean positional value - inherent to ReqsTuple design
     "PD008",   # mypy doesnt like .loc[] / ruff doesn't like .at[]
     "ANN401",  # Any in **kwargs - correct when forwarding kwargs to readabs
-
-    # --- specifically for Jupyter notebooks.
-    "B018",    # Found useless attribute access (often at cell end for output) 
-    "BLE001",  # catch-all exceptions - not usefull in Jupyter notebooks
-    "D100",    # Missing docstring in public module
-    "E402",    # Module level import not at top of file - doesn't work with Notebooks
-    "INP001",  # implicit-namespace-package - not relevant for Jupyter notebooks
-    "PLR0913", # Too many arguments - not relevant for Jupyter notebooks
+    "BLE001",  # catch-all exceptions - the runner reports any chart failure and carries on
+    "INP001",  # implicit-namespace-package - tools/ holds standalone scripts, not a package
+    "PLR0913", # Too many arguments - chart helpers take many plotting options
 ]
 # deliberate economics notation: α (capital share) and × (multiplication)
 lint.allowed-confusables = ["α", "×"]
-
-# asserts are wrong in production code (stripped under python -O), but notebooks
-# are not production code; the helper modules keep the rule.
-[tool.ruff.lint.per-file-ignores]
-"*.ipynb" = [
-    "S101",    # assert used
-    "PT018",   # composite assertion - pytest reporting advice, not relevant here
-]
 
 # typed stubs for third-party packages that ship none (yfinance)
 [tool.mypy]

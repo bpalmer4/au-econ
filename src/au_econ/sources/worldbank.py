@@ -28,6 +28,7 @@ SHEET = "Monthly Prices"
 MISSING = ["N/A", "missing", "-", "…", "..."]
 LABEL_ROW, UNIT_ROW, FIRST_DATA_ROW = 4, 5, 7
 INDICATOR_URL = "https://api.worldbank.org/v2/country/{countries}/indicator/{indicator}"
+INDICATOR_TIMEOUT = 120  # seconds; the API can take nearly two minutes on a query it has not cached
 PER_PAGE = 1000
 RESPONSE_PARTS = 2  # a data page is [page metadata, rows]
 
@@ -70,7 +71,7 @@ def get_indicator(indicator: str, countries: Iterable[str], start: int, end: int
     page = 1
     while True:
         params = {"format": "json", "date": f"{start}:{end}", "per_page": str(PER_PAGE), "page": str(page)}
-        response = json.loads(get_recent(url, params, "worldbank", RECENT_MAX_AGE))
+        response = json.loads(get_recent(url, params, "worldbank", RECENT_MAX_AGE, INDICATOR_TIMEOUT))
         if len(response) < RESPONSE_PARTS or response[1] is None:
             break
         records += [

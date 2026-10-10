@@ -2,8 +2,7 @@
 
 This explains how the code is organised, what happens when you type `uv run run.py ...`,
 how to add a new chart or series, and the conventions the charts follow. For everyday
-commands and troubleshooting, see the [README](../README.md). The full design record,
-with every decision and conversion, is [restructure-spec.md](restructure-spec.md).
+commands and troubleshooting, see the [README](../README.md).
 
 ## 1. The big picture
 
@@ -31,12 +30,11 @@ au-econ/
   CHARTS/                    every chart the package draws
   CACHE/                     downloaded files (http_cache); safe to delete, refetched
   .readabs_cache/            ABS and RBA files cached by readabs; safe to delete
-  KEYS/                      API keys: fred.api, EIA-API-KEY.txt (never commit these)
+  KEYS/                      API keys: fred.api, EIA-API-KEY.txt, webstat.api (never commit these)
   LOGS/                      output of the weekly launchd job
   scratch/                   throwaway work; scratch/check/ holds --check runs
   tools/                     chart comparison and footer checks (section 9)
-  docs/                      this file and the design spec
-  notebooks/                 the old Jupyter world, frozen; never edit
+  docs/                      this file
   src/au_econ/
     paths.py                 every folder location, anchored to the project root
     runner.py                discovery, selection, clearing, running, summary
@@ -100,8 +98,10 @@ Every module in `releases/` and `topics/` follows the same contract (section 5).
    number such as `6202`, or a topic such as `jobs`), or `--all`. Options: `--charts` (run
    only some charts), `--check` (a test run), `--list`, `--topics`.
 2. **Set up.** Matplotlib is put in file-only mode (no windows; this is also what lets the
-   weekly launchd job run). The cache folders are set before anything is imported, so
-   readabs uses `.readabs_cache/`.
+   weekly launchd job run). The cache folders (`READABS_CACHE_DIR`, `SDMXABS_CACHE_DIR`)
+   are set before anything is imported, so readabs uses `.readabs_cache/`. readabs reads
+   them at import: set any later and it uses its default cache and fetches everything
+   again.
 3. **Discover.** Every module under `releases/` and `topics/` is imported and its contract
    is read: `RELEASE`, `TOPICS`, `TITLE`, `fetch` and `CHARTS` (section 5). Importing a
    module must not fetch anything, so this is quick.
@@ -146,6 +146,23 @@ names the source that could not be reached.
 
 Typical uses: `uv run run.py --all --check` before travelling or after a change to a
 shared getter; `uv run run.py economy --check` for one topic.
+
+### Choosing charts (`--charts`)
+
+- `--charts` filters within the modules the run set selected; it never selects modules
+  itself. `--charts` without a run set is an error; `--all --charts u` searches every
+  module.
+- Matching is exact and ignores case. A chart answers to its function name and to the
+  extra short names beside it in `CHARTS`; there are no partial matches, so `u` never
+  selects `underemployment`.
+- Short names come from one shared dict, `VARIABLES` in `variables.py`, each with its
+  meaning. One name may cover several measures (headline, trimmed mean and weighted median
+  can all answer to `pi`). Names are lowercase ASCII (`pi`, not `π`), must not equal a
+  chart function name, and are added the first time a chart uses them. The runner refuses
+  to start if a `CHARTS` entry uses a name not in `VARIABLES`.
+- A module with no matching chart is skipped: not fetched, its folder untouched.
+- A name that matches nothing is an error that lists the chart names available; nothing
+  runs.
 
 ## 4. Layers and why
 
@@ -369,6 +386,10 @@ always knows where to look.
 - Lint and types must pass: `uv run ruff check`, `uv run ruff format`,
   `uv run mypy src/au_econ`. Fix types with `isinstance` checks, not `cast` or
   `# type: ignore`.
+- `sdmxabs` is used for the CPI hierarchy codelist only; everything else from the ABS
+  comes through readabs.
+- No PyMC (or arviz, jax, numpyro): Bayesian work belongs in the MacroModels project.
+- No test suite: drawing the charts is the test, and `--check` (section 9) runs them all.
 
 ## 9. Checking your work
 
@@ -386,3 +407,54 @@ always knows where to look.
   folders; `uv run python tools/footer_gaps.py <folder>` reports footer clearances
   ("COLLISION" when the footers touch).
 - To look at a chart: `open "CHARTS/<folder>/<file>.png"`.
+
+## 10. Still to do
+
+### Waiting on the ABS
+
+Charts waiting on the ABS labour force modernisation. The ABS paused its industry and
+occupation tables for the April to August 2026 transition and said they resume in Labour
+Force, Australia (6202.0) from the September 2026 reference period, released late October
+2026, with occupation recoded to OSCA and backcast. When that release is out, check its
+table list and concordance, then add these to the `lfs` and `jv` modules:
+
+- **Quarterly industry and occupation charts** (`lfs`), formerly from the ceased
+  6291.0.55.001 (tables 6291004, 6291006, 6291011 and cubes EQ05, EQ08, EQ09, EQ12):
+  sector growth, diffusion, shares, market against non-market, construction trades, hours
+  by sector. The OSCA recode means the ANZSCO-based charts (construction trades) need
+  rethinking.
+- **Industry job vacancy rates** (`jv`): vacancies (6354004) as a share of employment by
+  industry, and the latest against the 2009-19 mean. They need industry employment, which
+  ended with 6291 at 2026Q1. The Labour Account (6150.0.55.003) is not a stand-in: it
+  releases after the National Accounts, so it always trails the vacancy survey.
+- **Household dynamics** (`lfs`): persons by relationship in household as a share of the
+  civilian population 15+, formerly the 6291 FM2 cube. The ABS stopped publishing FM1-FM4
+  in April 2026 (most moved to TableBuilder). If the data return, chart every category; if
+  not, decide between a frozen-history set and dropping it.
+
+### Open design questions
+
+- **Retrying failed fetches and charts.** A failing chart runs once: the runner prints the
+  traceback, records the failure and moves on, with no pause, refetch or cache clearing.
+  Rerunning only the chart would not help, as each module fetches once and its charts share
+  that data; the CME and Yahoo fetches are not cached. Only DB.nomics retries (timeouts and
+  server errors, with backoff), and sources read through `http_cache` with a fallback use
+  their last saved copy. A retry could go in the sources (CME, Yahoo, oilprice and OPEC
+  retrying timeouts and server errors, as DB.nomics does) or in the runner (after a pause,
+  refetch the module's data and rerun its failed charts once, which repeats every other
+  fetch in the module). A retry suits network failures such as oilprice.com read timeouts.
+  It would not fix a bad answer: on 2026-10-04 CME returned a TTF curve none of whose
+  months matched Henry Hub's, which a retry would likely repeat. That case needs the
+  curve's trade date and months logged, then either falling back to the previous trade
+  date (as `cme.get_settlement_curve` does for empty dates) or failing with a message
+  naming the curve.
+- **The period of a flow on the y-axis, from the ABS metadata.** A dollar flow needs its
+  period ("$ Billions/Quarter"); a stock, index, percentage or ratio does not. Today the
+  "/Quarter" is typed by hand (8755, 5625). The metadata could supply it: `mc.dtype` marks
+  each series FLOW, STOCK, STOCK_CLOSE, INDEX, PERCENT, RATIO, AVERAGE or DERIVED, and
+  `mc.freq` gives Quarter, Month or Annual. The period would be added where data are
+  prepared for plotting, beside `ra.recalibrate`, so the units string is the ylabel as is.
+  Gaps needing an explicit override: DERIVED (all of 5206's key aggregates, GDP included,
+  though GDP is a flow), transformed data (a rolling four-quarter sum is still marked FLOW
+  per quarter but covers a year; a share of GDP is a ratio), and non-ABS sources, which
+  have no data type.

@@ -16,8 +16,8 @@ uv sync                      # installs Python packages and the au_econ package 
 uv run run.py --list         # if this prints a table of modules, the install works
 ```
 
-API keys live in `KEYS/` (not in git): `fred.api` (FRED) and `EIA-API-KEY.txt` (EIA). Copy
-the folder across if you move machines.
+API keys live in `KEYS/` (not in git): `fred.api` (FRED), `EIA-API-KEY.txt` (EIA) and
+`webstat.api` (Banque de France). Copy the folder across if you move machines.
 
 ## Everyday commands
 
@@ -138,17 +138,4 @@ keep the output short.
 | `LOGS/` | the weekly job's output |
 | `scratch/` | throwaway work; `scratch/check/` holds `--check` runs |
 | `tools/` | chart comparison and footer checks |
-| `docs/` | how-it-works.md, and restructure-spec.md (the design record) |
-| `notebooks/` | the old Jupyter notebooks, frozen until they are deleted; never edit |
-
-## The old world
-
-The charts used to come from Jupyter notebooks in `notebooks/` (with helper modules beside
-them, writing to `notebooks/CHARTS/`). Each notebook has been recreated in `src/au_econ/`,
-checked pixel-for-pixel against the notebook's charts, then brought to the chart
-conventions; two were dropped as superseded (Census ad hoc, DB.nomics GDP). A few charts
-wait on the ABS's modernised labour force releases (late October 2026): the quarterly
-industry and occupation charts, industry job vacancy rates, and household dynamics. The
-notebooks stay frozen until they are deleted in one go. The design, the decisions behind
-it and the record of every conversion are in
-[docs/restructure-spec.md](docs/restructure-spec.md).
+| `docs/` | how-it-works.md |

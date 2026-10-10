@@ -16,7 +16,6 @@ __pycache__/
 
 # API keys - keep private
 fred.api
-notebooks/fred.api
 EIA-API-KEY.txt
 KEYS/
 
@@ -26,19 +25,8 @@ KEYS/
 # unnecessary detail to be ignored
 .sdmxabs_cache/
 .readabs_cache/
-notebooks/CACHE/**
 CACHE/
-notebooks/ASX_DAILY_DATA/**
-notebooks/CHARTS/**
 CHARTS/**
-notebooks/DATA/**
-notebooks/documents/**
-notebooks/LOGS/**
-notebooks/.vscode/**
-notebooks/OLD/**
-notebooks/ABS-Data/**
-notebooks/govt-budget/**
-notebooks/MODEL_OUTPUTS/**
 LOGS/
 scratch/
 

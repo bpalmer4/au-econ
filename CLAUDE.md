@@ -4,8 +4,8 @@
 Charts of Australian economic and social statistics, from the latest data published by the
 ABS, the RBA and other sources (OECD, BIS, FRED, World Bank, DB.nomics, Yahoo, EIA, and
 Australian agencies). The charts come from the Python package `src/au_econ/`, run with
-`uv run run.py <name>`. The design, its decisions and the conversion record are in
-`docs/restructure-spec.md`.
+`uv run run.py <name>`. How it works, its decisions and what is still to do are in
+`docs/how-it-works.md`.
 
 ## Running
 ```bash
@@ -15,10 +15,12 @@ uv run run.py economy           # a topic: every module in it
 uv run run.py somp --list       # the charts in a module
 uv run run.py rba-fx --charts long_run_exchange_rates   # selected charts only
 uv run run.py --topics          # the topic words
+uv run run.py --variables       # the shared short names for --charts
 uv run run.py --all             # everything
 uv run run.py --all --check     # test run into scratch/check/; CHARTS/ untouched
 ```
-Each module writes to `CHARTS/<first release name> - <TITLE>/`. A full run of a module
+Each module writes to `CHARTS/<first release name> - <TITLE>/`; a topic run writes to
+`CHARTS/<topic>/<first release name> - <TITLE>/`. A full run of a module
 clears its folder only after `fetch()` succeeds, so an unreachable source keeps the old
 charts; a `--charts` run clears nothing. API keys live in `KEYS/`, downloads are cached in
 `CACHE/` (both gitignored). The user-facing guides are `README.md` (how-to) and
@@ -163,19 +165,15 @@ Every getter is cached for the run and returns copies. Most return `(series, uni
 |---|---|
 | `series.gdp` | `get_gdp(measure="CP"\|"CVM", series_type="SA"\|"T"\|"O")`, `get_table(table)` (any 5206 table), `get_compensation_per_hour` |
 | `series.prices` | `get_cpi("headline"\|"headline_sa"\|"trimmed"\|"weighted")`, `get_monthly_cpi` (+ splice report), `get_living_cost_index`, `get_wage_index("WPI"\|"AWOTE")`, `get_price_deflator("DFD"\|"GNE"\|"HFCE"\|"GDP")` |
-| `series.population` | `get_erp`, `get_state_erp`, `get_implicit_population`, `get_civ15(state)`, `get_adult21`, `get_adult21_monthly`, `smoothed_monthly_pop_growth`, `interp_21_share`, `interp_civ15_to_total`, `erp_age_sum` |
-| `series.nom` | `get_nom`, `get_nom_forward_proxy`, `get_population_growth_proxy` |
+| `series.population` | `get_erp`, `get_state_erp`, `get_implicit_population`, `get_civ15(state)`, `get_adult21`, `get_adult21_monthly`, `smoothed_monthly_pop_growth`, `interp_21_share`, `interp_civ15_to_total`, `erp_age_sum`, `get_smoothed_civ15_gap` |
+| `series.nom` | `get_nom`, `get_nom_forward_proxy`, `get_civ15_migration_split`, `get_nom_by_age`, `get_population_growth_proxy` |
 | `series.labour` | `get_unemployment_rate` (spliced to 1950, + splice report and backcast stats) |
 | `series.productivity` | `get_productivity_index` (GDP per hour worked to 1966, + splice report) |
 | `series.housing` | `get_house_price_index(extend_bis=, real=, seasonally_adjusted=)`, splice report |
-| `series.rates` | `get_cash_rate`, `get_daily_cash_rate`, `get_interbank_rate`, `get_aud_usd` |
-| `analysis` | `decompose.decompose`, `decompose.seasonally_adjust`, `henderson.hma`, `epochs` (government table and by-government measures) |
-| `charting` | `footers` (`SERIES_TYPE_NOTES`, `data_to`), `windows`, `titles.fix_abs_title`, `targets` (CPI target markers), `inflation_backplane`, `epochs.epoch_vlines`, `international`, `daily_prices`, `abs_rows` |
+| `series.rates` | `get_cash_rate`, `get_daily_cash_rate`, `get_interbank_rate`, `get_aud_usd`, `get_aud_usd_monthly_average` |
+| `analysis` | `decompose.decompose`, `decompose.seasonally_adjust`, `henderson.hma`, `epochs` (government table and by-government measures), `turning_points.local_extremes` |
+| `charting` | `footers` (`SERIES_TYPE_NOTES`, `data_to`), `windows`, `titles.fix_abs_title`, `targets` (CPI target markers), `inflation_backplane`, `epochs.epoch_vlines`, `international`, `daily_prices`, `abs_rows`, `turning_points` (`label_extremes`, `turning_points_plot`) |
 | `sources.abs` | `fetch_release(cat)` → `AbsRelease`, `get_pivot_cube`, `landing_page_workbook`; `sources.abs_workbook` parses the Excel-only GFS/taxation layout |
-
-## The old world (`notebooks/`)
-The Jupyter notebooks the package replaced are frozen: never move, edit, trim or repoint
-anything in `notebooks/`. They are deleted in one go when the rebuild is signed off.
 
 ## readabs Package Reference
 
