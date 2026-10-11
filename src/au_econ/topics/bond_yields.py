@@ -1,6 +1,7 @@
-"""Government bond yields: 10- and 30-year for five markets, China against the US, and AU less US.
+"""Government bond yields: 10- and 30-year for five markets, China against the US, and spreads over the US.
 
-The five markets are the US, Japan, Germany, the UK and Australia (10-year only). France
+The five markets are the US, Japan, Germany, the UK and Australia (10-year only); Australia,
+and Germany and Japan, have 10-year spreads over the US. France
 has charts of its own: its 10- and 30-year yields, its 10-year against Germany's, and
 France less Germany. Germany, France, Italy and Spain have 10-year benchmark yields from a
 single source (Investing.com) from February 1994, when all four become continuous, and
@@ -93,6 +94,8 @@ SPREAD_NOTE = (
     "RBA interpolated 10-year yield less the ^TNX constant maturity yield: "
     "the same tenor, but not identically computed"
 )
+US_SPREAD_LEGS = ("United States", "Germany", "Japan")  # the base first
+US_SPREAD_NOTE = "Fitted-curve Bund and benchmark JGB yields less the ^TNX constant maturity yield"
 FRANCE_CODES = {  # Banque de France constant maturity (TEC) series keys, by tenor
     "10-year": "FM.D.FR.EUR.FR2.BB.FRMOYTEC10.HSTA",
     "30-year": "FM.D.FR.EUR.FR2.BB.FRMOYTEC30.HSTA",
@@ -310,6 +313,22 @@ def _spread_chart(tenor: str, yields: pd.DataFrame, note: str) -> None:
     )
 
 
+def _spreads_over_base(yields: pd.DataFrame, tenor: str, *, color: list[str], note: str, rfooter: str) -> None:
+    """Each later column's yield less the first's, each on days both markets traded."""
+    base, *others = (str(country) for country in yields.columns)
+    spreads = pd.DataFrame({country: yields[country] - yields[base] for country in others}).dropna(how="all")
+    if spreads.empty:
+        raise ValueError(f"No {tenor} days on which {base} and another market both traded")
+    _spread_lines(
+        spreads,
+        color=color,
+        title=f"{_title_countries(others)} less {_title_countries([base])}: {tenor} Government Bond Spreads",
+        note=note,
+        lfooter=_data_to_footer(spreads),
+        rfooter=rfooter,
+    )
+
+
 # --- charts
 def yields_10_year(data: BondYields) -> None:
     """10-year yields: US, Japan, Germany, UK and Australia."""
@@ -329,6 +348,20 @@ def china_us(data: BondYields) -> None:
 def australia_us_spread(data: BondYields) -> None:
     """Australia less US 10-year yield, on days both markets traded."""
     _spread_chart(SPREAD_TENOR, data.tenors[SPREAD_TENOR][list(SPREAD_LEGS)], SPREAD_NOTE)
+
+
+def us_spreads(data: BondYields) -> None:
+    """Germany and Japan less the US at ten years, each on days both markets traded."""
+    yields = data.tenors[SPREAD_TENOR]
+    colors = dict(zip(yields.columns, get_color_list(len(yields.columns)), strict=True))  # as in yields_10_year
+    legs = yields[list(US_SPREAD_LEGS)]
+    _spreads_over_base(
+        legs,
+        SPREAD_TENOR,
+        color=[colors[country] for country in US_SPREAD_LEGS[1:]],
+        note=US_SPREAD_NOTE,
+        rfooter=_source_footer(legs),
+    )
 
 
 def france(data: BondYields) -> None:
@@ -354,16 +387,11 @@ def euro_yields(data: BondYields) -> None:
 
 def euro_spreads(data: BondYields) -> None:
     """France, Italy and Spain less Germany at ten years, each on days both markets traded."""
-    base, *others = (str(country) for country in data.euro.columns)
-    spreads = pd.DataFrame({country: data.euro[country] - data.euro[base] for country in others}).dropna(how="all")
-    if spreads.empty:
-        raise ValueError(f"No {EURO_TENOR} days on which {base} and another market both traded")
-    _spread_lines(
-        spreads,
+    _spreads_over_base(
+        data.euro,
+        EURO_TENOR,
         color=get_color_list(len(data.euro.columns))[1:],  # each country keeps its colour from euro_yields
-        title=f"{_title_countries(others)} less {base}: {EURO_TENOR} Government Bond Spreads",
         note=EURO_SPREAD_NOTE,
-        lfooter=_data_to_footer(spreads),
         rfooter=EURO_SOURCE,
     )
 
@@ -374,6 +402,7 @@ CHARTS = (
     (yields_30_year, ()),
     (china_us, ()),
     (australia_us_spread, ()),
+    (us_spreads, ()),
     (france, ()),
     (france_germany, ()),
     (france_germany_spread, ()),
