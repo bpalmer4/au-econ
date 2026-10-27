@@ -19,7 +19,7 @@ from au_econ.series.productivity import COVID_FLAT_FROM, COVID_FLAT_TO, TREND_YE
 
 # --- module contract
 RELEASE = ("wage-benchmark",)
-TOPICS = ("wages",)
+TOPICS = ("wages", "economy")
 TITLE = "Wage Benchmark"
 
 # --- constants

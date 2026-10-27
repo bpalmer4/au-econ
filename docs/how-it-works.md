@@ -55,7 +55,7 @@ The directories under `src/au_econ/` are layers; the import rules between them a
 section 4.
 
 - **`sources/`: getting raw data.** One file per provider: `abs.py`, `rba.py`, `fred.py`,
-  `oecd.py`, `yahoo.py`, `eia.py`, `bis.py`, `nyfed.py`, `opec.py`, `bundesbank.py`,
+  `oecd.py`, `yahoo.py`, `eia.py`, `bis.py`, `nyfed.py`, `bundesbank.py`,
   `boe.py`, `chinabond.py` and others. Each fetches, caches and parses one provider's data
   and never combines it with another's. This is the only place that touches URLs.
   `http_cache.py` is the download cache; `abs_workbook.py` parses the Excel-only GFS and
@@ -67,7 +67,8 @@ section 4.
 - **`series/`: shared economic concepts.** When more than one chart module needs the same
   concept, it gets a cached getter here: GDP (`gdp.py`), the CPI, wages and deflators
   (`prices.py`), population and NOM (`population.py`, `nom.py`), the long-run
-  unemployment rate (`labour.py`), productivity, house prices (`housing.py`), the cash rate
+  unemployment rate (`labour.py`), productivity and its trend growth, with the COVID swing
+  flattened (`productivity.py`), house prices (`housing.py`), the cash rate
   and the AUD (`rates.py`). A calculation that combines providers also lives here, named
   for what the result means. Getters are cached for the run and return copies.
 - **`charting/`: shared chart pieces.** The furniture the chart modules share:
@@ -86,7 +87,10 @@ section 4.
 - **`topics/`: chart sets that span publications.** Modules tied to no single release,
   because they combine publications or providers: `recessions.py`, `stagflation.py`,
   `neutral_rate.py`, `au_vs_us.py`, `bond_yields.py`, `energy_markets.py`,
-  `house_price_drawdowns.py`, `wage_measures.py`, and the `political/` subpackage.
+  `house_price_drawdowns.py`, `wage_measures.py`, `wage_benchmark.py` (wage growth against
+  the 2.5% target plus productivity trend), `asx_indices.py`, `commodity_futures.py`,
+  `domestic_family_violence.py`, `temporary_visa_workforce.py`, and the `political/`
+  subpackage.
 
 Every module in `releases/` and `topics/` follows the same contract (section 5).
 
@@ -439,7 +443,7 @@ table list and concordance, then add these to the `lfs` and `jv` modules:
   Rerunning only the chart would not help, as each module fetches once and its charts share
   that data; the CME and Yahoo fetches are not cached. Only DB.nomics retries (timeouts and
   server errors, with backoff), and sources read through `http_cache` with a fallback use
-  their last saved copy. A retry could go in the sources (CME, Yahoo, oilprice and OPEC
+  their last saved copy. A retry could go in the sources (CME, Yahoo and oilprice
   retrying timeouts and server errors, as DB.nomics does) or in the runner (after a pause,
   refetch the module's data and rerun its failed charts once, which repeats every other
   fetch in the module). A retry suits network failures such as oilprice.com read timeouts.
