@@ -29,8 +29,8 @@ PERCENT = 100
 SOURCE = "ABS: 5206.0, 6202.0, 6345.0"
 BENCHMARK = f"{INFLATION_TARGET}% target + productivity trend"
 LHEADER = (
-    f"Productivity trend: GDP per hour worked, {TREND_YEARS}-year change in annual-average level, "
-    f"per year; COVID swing flattened {COVID_FLAT_FROM}-{COVID_FLAT_TO}"
+    f"Productivity trend: GDP per hour worked, {TREND_YEARS}-year compound growth in annual-average level; "
+    f"COVID swing flattened {COVID_FLAT_FROM}-{COVID_FLAT_TO}"
 )
 SECTORS = {"private": "WPI private", "public": "WPI public", "all": "WPI"}
 
@@ -61,7 +61,8 @@ def fetch() -> BenchmarkData:
     if growth.dropna().empty:
         raise ValueError("No WPI growth to chart")
     trend, _units = get_productivity_trend()
-    benchmark = (INFLATION_TARGET + trend).reindex(growth.index).rename(BENCHMARK)
+    compounded = ((1 + INFLATION_TARGET / PERCENT) * (1 + trend / PERCENT) - 1) * PERCENT
+    benchmark = compounded.reindex(growth.index).rename(BENCHMARK)
 
     monthly, _units, _stype = get_unemployment_rate()
     unemployment = monthly.groupby(pd.PeriodIndex(monthly.index).asfreq("Q")).mean()

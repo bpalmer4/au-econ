@@ -9,8 +9,8 @@ contributes growth, not level: the splice rebases it onto the published index.
 get_productivity_trend() is trend growth in that index with the COVID swing taken out:
 composition lifted GDP per hour in 2020-22 (low-paid hours went first) and took it back.
 The log index is joined by a straight line from 2019Q4 to 2023Q1, the two quarters at
-which it stood at the same level; the trend is then the change in the annual-average level
-over a trailing window, per year. Trailing, so a published value never revises (unlike a
+which it stood at the same level; the trend is then the compound annual growth rate in the
+annual-average level over a trailing window. Trailing, so a published value never revises (unlike a
 Henderson or HP trend at the sample end); annual averages, so quarterly noise at the two
 ends of a short window does not swing it.
 """
@@ -46,6 +46,7 @@ COVID_FLAT_TO = "2023Q1"
 TREND_YEARS = 5
 QUARTERS_PER_YEAR = 4
 LOG_POINTS = 100  # log x 100: changes read as per cent
+PERCENT = 100
 TREND_UNITS = "Per cent per year"
 
 
@@ -110,7 +111,9 @@ def _productivity_trend(years: int) -> pd.Series:
     log_level.loc[(log_level.index > start) & (log_level.index < end)] = np.nan
     flat = log_level.interpolate(method="linear", limit_area="inside")
     annual = flat.rolling(QUARTERS_PER_YEAR).mean()
-    return (annual.diff(years * QUARTERS_PER_YEAR) / years).dropna().rename("Productivity trend")
+    log_rate = annual.diff(years * QUARTERS_PER_YEAR) / years
+    cagr = (np.exp(log_rate / LOG_POINTS) - 1) * PERCENT
+    return cagr.dropna().rename("Productivity trend")
 
 
 def get_productivity_trend(years: int = TREND_YEARS) -> tuple[pd.Series, str]:
