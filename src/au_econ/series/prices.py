@@ -40,10 +40,12 @@ LCI_SELECTOR = {"Index Numbers": mc.did, "Employee households": mc.did, "All gro
 
 # --- wages: WPI (6345.0) and AWOTE (6302.0)
 WPI_CATALOGUE, WPI_TABLE = "6345.0", "634501"
-WPI_DID = (
-    "Quarterly Index ;  Total hourly rates of pay excluding bonuses ;  "
-    "Australia ;  Private and Public ;  All industries ;"
-)
+_WPI_ITEM = "Quarterly Index ;  Total hourly rates of pay excluding bonuses ;  Australia ;  "
+WPI_DIDS = {
+    "WPI": f"{_WPI_ITEM}Private and Public ;  All industries ;",
+    "WPI private": f"{_WPI_ITEM}Private ;  All industries ;",
+    "WPI public": f"{_WPI_ITEM}Public ;  All industries ;",
+}
 AWOTE_CATALOGUE, AWOTE_TABLE = "6302.0", "6302003"
 AWOTE_DID = "Earnings; Persons; Full Time; Adult; Ordinary time earnings ;"
 ORIGINAL = "Original"
@@ -165,10 +167,15 @@ def get_living_cost_index() -> tuple[Series, str, str]:
 
 
 @cache
-def _wpi() -> tuple[Series, str, str]:
-    """Fetch the Wage Price Index, seasonally adjusted (cached; not for mutation)."""
+def _wpi(measure: str) -> tuple[Series, str, str]:
+    """Fetch one sector's Wage Price Index, seasonally adjusted (cached; not for mutation)."""
     data, meta = ra.read_abs_cat(WPI_CATALOGUE, single_excel_only=WPI_TABLE, verbose=False)
-    selector = {WPI_TABLE: mc.table, WPI_DID: mc.did, SEASONALLY_ADJUSTED: mc.stype, INDEX_NUMBERS: mc.unit}
+    selector = {
+        WPI_TABLE: mc.table,
+        WPI_DIDS[measure]: mc.did,
+        SEASONALLY_ADJUSTED: mc.stype,
+        INDEX_NUMBERS: mc.unit,
+    }
     table, series_id, units = ra.find_abs_id(meta, selector, verbose=False)
     return data[table][series_id], units, SEASONALLY_ADJUSTED
 
@@ -190,13 +197,17 @@ def _awote() -> tuple[Series, str, str]:
 
 
 def get_wage_index(measure: str = "WPI") -> tuple[Series, str, str]:
-    """Return a wage measure: "WPI" (SA quarterly index, 6345.0) or "AWOTE" (Original $/week, 6302.0)."""
-    if measure == "WPI":
-        series, units, stype = _wpi()
+    """Return a wage measure.
+
+    "WPI" (all sectors), "WPI private" or "WPI public" (SA quarterly indexes, 6345.0), or
+    "AWOTE" (Original $/week, 6302.0).
+    """
+    if measure in WPI_DIDS:
+        series, units, stype = _wpi(measure)
     elif measure == "AWOTE":
         series, units, stype = _awote()
     else:
-        raise ValueError(f"Unknown wage measure {measure!r}: choose from ('WPI', 'AWOTE')")
+        raise ValueError(f"Unknown wage measure {measure!r}: choose from {(*WPI_DIDS, 'AWOTE')}")
     return series.copy(), units, stype
 
 

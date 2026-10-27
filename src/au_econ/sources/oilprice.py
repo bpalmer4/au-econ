@@ -19,7 +19,7 @@ ONE_YEAR = 5  # the widget's period code for a year of daily prices
 STALE_DAYS = 400  # entries this far before the latest are out-of-sequence artefacts
 
 # Oilprice.com blend ids
-WTI, BRENT, OMAN, DUBAI = 45, 46, 48, 144
+WTI, BRENT, OMAN, DUBAI, OPEC_BASKET = 45, 46, 48, 144, 29
 
 
 def get_blend(blend_id: int, name: str) -> pd.Series:

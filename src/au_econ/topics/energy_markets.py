@@ -15,7 +15,7 @@ import mgplot as mg
 import pandas as pd
 from mgplot.utilities import get_color_list
 
-from au_econ.sources import cme, eia, oilprice, opec, yahoo
+from au_econ.sources import cme, eia, oilprice, yahoo
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -27,7 +27,7 @@ TITLE = "Energy Markets"
 
 # --- constants
 SOURCE_YAHOO = "Yahoo"
-SOURCE_EIA_OPEC = "EIA; OPEC"
+SOURCE_EIA_OILPRICE = "EIA; Oilprice.com"
 SOURCE_OILPRICE = "Oilprice.com"
 SHORT_START = "2026-01-01"  # history start for the oil, gas and refined-product charts
 RETAIL_START = "2025-01-01"  # a full flat 2025 baseline ahead of the disruption
@@ -127,7 +127,7 @@ def fetch() -> EnergyData:
             EIA_WTI: eia.get_series(eia.WTI_SPOT, EIA_WTI),
             EIA_BRENT: eia.get_series(eia.BRENT_SPOT, EIA_BRENT),
         },
-        opec_basket=opec.get_basket(),
+        opec_basket=oilprice.get_blend(oilprice.OPEC_BASKET, OPEC_BASKET),
         oilprice={name: oilprice.get_blend(blend, name) for name, blend in OILPRICE_BLENDS.items()},
         yahoo={ticker: yahoo.get_close(ticker, SHORT_START) for ticker in yahoo_tickers},
         crude_curves={root: yahoo.get_forward_curve(root, N_FORWARD_MONTHS) for root in ("CL", "BZ", "NG")},
@@ -329,7 +329,7 @@ def physical_spot(data: EnergyData) -> None:
         rounding=2,
         axvline=EVENTS,
         lfooter=f"Daily physical spot. EIA WTI/Brent to {eia_last}; OPEC Basket to {orb_last}.",
-        rfooter=SOURCE_EIA_OPEC,
+        rfooter=SOURCE_EIA_OILPRICE,
     )
 
 
@@ -380,7 +380,7 @@ def location_premium(data: EnergyData) -> None:
             "Daily spreads. OPEC Reference Basket less WTI (Cushing) and less "
             f"Brent (Europe). Data to {_last_day(spreads)}."
         ),
-        rfooter=SOURCE_EIA_OPEC,
+        rfooter=SOURCE_EIA_OILPRICE,
     )
 
 

@@ -164,11 +164,11 @@ Every getter is cached for the run and returns copies. Most return `(series, uni
 | Module | Getters / helpers |
 |---|---|
 | `series.gdp` | `get_gdp(measure="CP"\|"CVM", series_type="SA"\|"T"\|"O")`, `get_table(table)` (any 5206 table), `get_compensation_per_hour` |
-| `series.prices` | `get_cpi("headline"\|"headline_sa"\|"trimmed"\|"weighted")`, `get_monthly_cpi` (+ splice report), `get_living_cost_index`, `get_wage_index("WPI"\|"AWOTE")`, `get_price_deflator("DFD"\|"GNE"\|"HFCE"\|"GDP")` |
+| `series.prices` | `get_cpi("headline"\|"headline_sa"\|"trimmed"\|"weighted")`, `get_monthly_cpi` (+ splice report), `get_living_cost_index`, `get_wage_index("WPI"\|"WPI private"\|"WPI public"\|"AWOTE")`, `get_price_deflator("DFD"\|"GNE"\|"HFCE"\|"GDP")` |
 | `series.population` | `get_erp`, `get_state_erp`, `get_implicit_population`, `get_civ15(state)`, `get_adult21`, `get_adult21_monthly`, `smoothed_monthly_pop_growth`, `interp_21_share`, `interp_civ15_to_total`, `erp_age_sum`, `get_smoothed_civ15_gap` |
 | `series.nom` | `get_nom`, `get_nom_forward_proxy`, `get_civ15_migration_split`, `get_nom_by_age`, `get_population_growth_proxy` |
 | `series.labour` | `get_unemployment_rate` (spliced to 1950, + splice report and backcast stats) |
-| `series.productivity` | `get_productivity_index` (GDP per hour worked to 1966, + splice report) |
+| `series.productivity` | `get_productivity_index` (GDP per hour worked to 1966, + splice report), `get_productivity_trend` (5-year trend growth, COVID swing flattened) |
 | `series.housing` | `get_house_price_index(extend_bis=, real=, seasonally_adjusted=)`, splice report |
 | `series.rates` | `get_cash_rate`, `get_daily_cash_rate`, `get_interbank_rate`, `get_aud_usd`, `get_aud_usd_monthly_average` |
 | `analysis` | `decompose.decompose`, `decompose.seasonally_adjust`, `henderson.hma`, `epochs` (government table and by-government measures), `turning_points.local_extremes` |

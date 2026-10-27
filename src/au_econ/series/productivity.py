@@ -1,15 +1,24 @@
-"""Long-run labour productivity: GDP per hour worked, spliced back to 1966.
+"""Long-run labour productivity: GDP per hour worked, spliced back to 1966, and its trend growth.
 
 Two segments: the published National Accounts index (5206.0 Key Aggregates, seasonally
 adjusted, unchanged from 1978Q3) over a series derived by dividing seasonally adjusted chain
 volume GDP by aggregate weekly hours worked from RBA Occasional Paper 8 table 4.12. Those
 hours are an annual August snapshot interpolated to quarters, so the derived segment
 contributes growth, not level: the splice rebases it onto the published index.
+
+get_productivity_trend() is trend growth in that index with the COVID swing taken out:
+composition lifted GDP per hour in 2020-22 (low-paid hours went first) and took it back.
+The log index is joined by a straight line from 2019Q4 to 2023Q1, the two quarters at
+which it stood at the same level; the trend is then the change in the annual-average level
+over a trailing window, per year. Trailing, so a published value never revises (unlike a
+Henderson or HP trend at the sample end); annual averages, so quarterly noise at the two
+ends of a short window does not swing it.
 """
 
 import io
 from functools import cache
 
+import numpy as np
 import pandas as pd
 import readabs as ra
 from readabs import metacol as mc
@@ -30,6 +39,14 @@ OP8_HOURS_SHEET = "4.12"
 OP8_HOURS_CACHE_PREFIX = "rba_op8_hours"
 OP8_HOURS_YEAR_COL, OP8_HOURS_TOTAL_COL = 0, 32
 AUGUST = 8
+
+# --- trend growth
+COVID_FLAT_FROM = "2019Q4"
+COVID_FLAT_TO = "2023Q1"
+TREND_YEARS = 5
+QUARTERS_PER_YEAR = 4
+LOG_POINTS = 100  # log x 100: changes read as per cent
+TREND_UNITS = "Per cent per year"
 
 
 @cache
@@ -82,3 +99,20 @@ def get_productivity_index() -> tuple[pd.Series, str, str]:
 def get_productivity_splice_report() -> pd.DataFrame:
     """Return the ra.splice() audit report for get_productivity_index."""
     return _productivity_index()[1].copy()
+
+
+@cache
+def _productivity_trend(years: int) -> pd.Series:
+    """Trend growth in GDP per hour worked, COVID swing flattened (cached; not for mutation)."""
+    index, _units, _stype = get_productivity_index()
+    log_level = np.log(index) * LOG_POINTS
+    start, end = pd.Period(COVID_FLAT_FROM, freq="Q"), pd.Period(COVID_FLAT_TO, freq="Q")
+    log_level.loc[(log_level.index > start) & (log_level.index < end)] = np.nan
+    flat = log_level.interpolate(method="linear", limit_area="inside")
+    annual = flat.rolling(QUARTERS_PER_YEAR).mean()
+    return (annual.diff(years * QUARTERS_PER_YEAR) / years).dropna().rename("Productivity trend")
+
+
+def get_productivity_trend(years: int = TREND_YEARS) -> tuple[pd.Series, str]:
+    """Return trend growth in GDP per hour worked, COVID swing flattened, as (series copy, units)."""
+    return _productivity_trend(years).copy(), TREND_UNITS
