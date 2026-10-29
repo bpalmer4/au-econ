@@ -6,4 +6,7 @@ trimmed mean and weighted median charts can all answer to `pi`). A name is added
 first time a chart uses it.
 """
 
-VARIABLES: dict[str, str] = {}
+VARIABLES: dict[str, str] = {
+    "noise": "noise in quarterly CPI growth: headline against the underlying measures",
+    "bias": "bias in the CPI underlying measures: their growth against headline",
+}

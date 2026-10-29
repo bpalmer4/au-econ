@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import readabs as ra
-from mgplot import calc_growth, growth_plot_finalise, line_plot_finalise, multi_start
+from mgplot import bar_plot_finalise, calc_growth, growth_plot_finalise, line_plot_finalise, multi_start
 from readabs import metacol as mc
 
 from au_econ.analysis.henderson import hma
@@ -127,6 +127,20 @@ GROWTH = {
     "Monthly Automotive fuel (Orig)": (MONTHLY_GROUPS, "Automotive fuel ;", ORIGINAL),
     "Monthly Electricity (Orig)": (MONTHLY_GROUPS, "Electricity ;", ORIGINAL),
 }
+# quarterly measures compared for noise in their quarterly growth
+NOISE = {
+    "Headline (Orig)": (QUARTERLY_ALL_GROUPS, "All groups CPI ;  Australia ;", ORIGINAL),
+    "Headline (SA)": (APPENDIX, "All groups CPI, seasonally adjusted", SEASONALLY_ADJUSTED),
+    "Trimmed Mean (SA)": (APPENDIX, "Trimmed Mean", SEASONALLY_ADJUSTED),
+    "Weighted Median (SA)": (APPENDIX, "Weighted Median", SEASONALLY_ADJUSTED),
+}
+QUARTERLY_HENDERSON_TERMS = 9
+NOISE_ROUNDING = 2
+TREND_NOTE = f"{QUARTERLY_HENDERSON_TERMS}-term Henderson trend. "
+# the underlying measures tested for bias against headline
+BIAS_BASE = "Headline (SA)"
+UNDERLYING = ("Trimmed Mean (SA)", "Weighted Median (SA)")
+HEADLINE_LEVEL = 100  # underlying levels are indexed to headline at this value
 
 
 # --- helpers
@@ -174,6 +188,56 @@ def long_headline(release: AbsRelease) -> pd.Series:
     quarterly = release.data[QUARTERLY_ALL_GROUPS][series_id].dropna() / 100
     annual = ((1 + quarterly).rolling(QUARTERS_PER_YEAR).apply(lambda x: x.prod()) - 1) * 100
     return annual.dropna().rename(LONG_HEADLINE)
+
+
+def _quarterly_growth(release: AbsRelease) -> pd.DataFrame:
+    """Return quarterly growth for each noise measure, over the quarters they all cover."""
+    growth = {
+        label: _select(release, spec, unit=INDEX_NUMBERS, year_on_year=False).pct_change() * 100
+        for label, spec in NOISE.items()
+    }
+    frame = pd.DataFrame(growth).dropna()
+    if frame.empty:
+        raise ValueError("No quarters common to the CPI noise measures")
+    return frame
+
+
+def _noise_statistics(frame: pd.DataFrame) -> tuple[tuple[pd.Series, str, str, str], ...]:
+    """Return (statistic, title, xlabel, reading note) for each measure of noise."""
+    trend = frame.apply(lambda column: hma(column, QUARTERLY_HENDERSON_TERMS))
+    errors = (frame - trend).abs()
+    return (
+        (
+            frame.apply(lambda column: column.autocorr(1)),
+            "Stability of Quarterly CPI Measures",
+            "Correlation of quarterly growth with the previous quarter's",
+            "Higher is better. ",
+        ),
+        (
+            frame.diff().std(),
+            "Volatility of Quarterly CPI Measures",
+            "Std. dev. of the change in quarterly growth (percentage points)",
+            "Lower is better. ",
+        ),
+        (
+            errors.mean(),
+            "Mean Absolute Error from Trend: Quarterly CPI Measures",
+            "Mean absolute gap between quarterly growth and its trend (ppts)",
+            TREND_NOTE + "Lower is better. ",
+        ),
+        (
+            errors.std(),
+            "Spread of Absolute Errors from Trend: Quarterly CPI Measures",
+            "Std. dev. of absolute gaps between quarterly growth and its trend",
+            TREND_NOTE + "Lower is better. ",
+        ),
+    )
+
+
+def _level_relative(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return each underlying measure's cumulated price level relative to headline (headline = 100)."""
+    levels = (1 + frame / 100).cumprod()
+    return levels[list(UNDERLYING)].div(levels[BIAS_BASE], axis=0) * HEADLINE_LEVEL
 
 
 # --- charts
@@ -264,10 +328,86 @@ def trend_annualised(release: AbsRelease) -> None:
         )
 
 
+def quarterly_trend_fit(release: AbsRelease) -> None:
+    """Quarterly growth against its Henderson trend, for each measure compared for noise."""
+    frame = _quarterly_growth(release)
+    thin, thick = TREND_WIDTHS
+    for label, column in frame.items():
+        line_plot_finalise(
+            pd.DataFrame({label: column, "Trend": hma(column, QUARTERLY_HENDERSON_TERMS)}),
+            title=f"Quarterly CPI Growth v Trend: {label}",
+            ylabel="Per cent per quarter",
+            width=[thin, thick],
+            annotate=[False, True],  # label the trend line only
+            rounding=NOISE_ROUNDING,
+            axhline=QUARTERLY_CPI_TARGET,
+            legend={"loc": "best", "fontsize": "x-small"},
+            lfooter=f"Australia. {SERIES_TYPE_NOTES[NOISE[str(label)][2]]}{TREND_NOTE}",
+            rfooter=release.source,
+            y0=True,
+        )
+
+
+def quarterly_noise(release: AbsRelease) -> None:
+    """Noise in quarterly growth, headline against the underlying measures, ranked four ways."""
+    frame = _quarterly_growth(release)
+    span = f"Data from {frame.index[0]} to {frame.index[-1]}. "
+    for statistic, title, xlabel, note in _noise_statistics(frame):
+        bar_plot_finalise(
+            statistic.sort_values(),
+            horizontal=True,
+            rounding=NOISE_ROUNDING,
+            title=title,
+            xlabel=xlabel,
+            lfooter=LFOOTER + span + note,
+            rfooter=release.source,
+        )
+
+
+def quarterly_bias(release: AbsRelease) -> None:
+    """Gap between each underlying measure's quarterly growth and headline's, with its running mean."""
+    frame = _quarterly_growth(release)
+    span = f"Data from {frame.index[0]} to {frame.index[-1]}. "
+    thin, thick = TREND_WIDTHS
+    for label in UNDERLYING:
+        gap = frame[label] - frame[BIAS_BASE]
+        line_plot_finalise(
+            pd.DataFrame({"Gap": gap, "Running mean": gap.expanding().mean()}),
+            title=f"Quarterly Growth Gap to Headline: {label}",
+            ylabel="Percentage points",
+            width=[thin, thick],
+            annotate=[False, True],  # label the running mean only
+            rounding=NOISE_ROUNDING,
+            legend={"loc": "best", "fontsize": "x-small"},
+            lfooter=LFOOTER + span + f"Gap: {label} less {BIAS_BASE}. ",
+            rfooter=release.source,
+            y0=True,
+        )
+
+
+def level_bias(release: AbsRelease) -> None:
+    """Price levels cumulated from the underlying measures' quarterly growth, relative to headline."""
+    frame = _quarterly_growth(release)
+    line_plot_finalise(
+        _level_relative(frame),
+        title="Underlying CPI Price Levels Relative to Headline",
+        ylabel=f"Index ({BIAS_BASE} = {HEADLINE_LEVEL})",
+        rounding=1,
+        axhline={"y": HEADLINE_LEVEL, "color": "black", "linestyle": "--", "linewidth": 0.75},
+        legend={"loc": "best", "fontsize": "x-small"},
+        lfooter=LFOOTER + f"Quarterly growth cumulated from {frame.index[0]}. ",
+        rfooter=release.source,
+    )
+
+
 # --- table of contents, in run order
 CHARTS = (
     (cpi_measures, ()),
     (growth, ()),
     (core_measures, ()),
     (trend_annualised, ()),
+    (quarterly_trend_fit, ("noise",)),
+    (quarterly_noise, ("noise",)),
+    (quarterly_bias, ("bias",)),
+    (level_bias, ("bias",)),
 )
