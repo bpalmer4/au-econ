@@ -31,7 +31,6 @@ au-econ/
   CACHE/                     downloaded files (http_cache); safe to delete, refetched
   .readabs_cache/            ABS and RBA files cached by readabs; safe to delete
   KEYS/                      API keys: fred.api, EIA-API-KEY.txt, webstat.api (never commit these)
-  LOGS/                      output of the weekly launchd job
   scratch/                   throwaway work; scratch/check/ holds --check runs
   tools/                     chart comparison and footer checks (section 9)
   docs/                      this file
@@ -101,11 +100,10 @@ Every module in `releases/` and `topics/` follows the same contract (section 5).
 1. **Parse the command line.** One run set (a release name such as `lfs`, a release
    number such as `6202`, or a topic such as `jobs`), or `--all`. Options: `--charts` (run
    only some charts), `--check` (a test run), `--list`, `--topics`.
-2. **Set up.** Matplotlib is put in file-only mode (no windows; this is also what lets the
-   weekly launchd job run). The cache folders (`READABS_CACHE_DIR`, `SDMXABS_CACHE_DIR`)
-   are set before anything is imported, so readabs uses `.readabs_cache/`. readabs reads
-   them at import: set any later and it uses its default cache and fetches everything
-   again.
+2. **Set up.** Matplotlib is put in file-only mode (no windows). The cache folders
+   (`READABS_CACHE_DIR`, `SDMXABS_CACHE_DIR`) are set before anything is imported, so
+   readabs uses `.readabs_cache/`. readabs reads them at import: set any later and it uses
+   its default cache and fetches everything again.
 3. **Discover.** Every module under `releases/` and `topics/` is imported and its contract
    is read: `RELEASE`, `TOPICS`, `TITLE`, `fetch` and `CHARTS` (section 5). Importing a
    module must not fetch anything, so this is quick.
@@ -148,8 +146,8 @@ cash rate), so the only way to be sure every source is reachable is to run every
 The summary at the end tells you which modules worked; a `FAIL ... fetch() failed:` line
 names the source that could not be reached.
 
-Typical uses: `uv run run.py --all --check` before travelling or after a change to a
-shared getter; `uv run run.py economy --check` for one topic.
+Typical uses: `uv run run.py --all --check` to see which sources can be reached, or after
+a change to a shared getter; `uv run run.py economy --check` for one topic.
 
 ### Choosing charts (`--charts`)
 

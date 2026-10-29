@@ -6,18 +6,18 @@ published by the ABS, the RBA and other sources.
 This README is the practical how-to. How the code works, how to add a new chart or series,
 and the chart conventions are in [docs/how-it-works.md](docs/how-it-works.md).
 
-## Setting up (a new machine, or after a while away)
+## Setting up
 
-You need [uv](https://docs.astral.sh/uv/) and this folder.
+You need [uv](https://docs.astral.sh/uv/) and a copy of this repository.
 
 ```bash
-cd ~/au-econ
+cd au-econ
 uv sync                      # installs Python packages and the au_econ package itself
 uv run run.py --list         # if this prints a table of modules, the install works
 ```
 
 API keys live in `KEYS/` (not in git): `fred.api` (FRED), `EIA-API-KEY.txt` (EIA) and
-`webstat.api` (Banque de France). Copy the folder across if you move machines.
+`webstat.api` (Banque de France).
 
 ## Everyday commands
 
@@ -34,7 +34,7 @@ uv run run.py --all             # everything (takes a while)
 ```
 
 Charts land in `CHARTS/<release> - <title>/`, or `CHARTS/<topic>/<release> - <title>/`
-for a topic run. Look at one with `open "CHARTS/6202 - Labour Force/<file>.png"`.
+for a topic run.
 
 What a run does to your existing charts:
 - A full run of a module first fetches its data. **Only if that succeeds** does it delete
@@ -70,10 +70,6 @@ Read the summary at the end:
   summary: an ABS or RBA file could not be refreshed, so the chart used your last download
   (see "Offline" below).
 
-When travelling: run `uv run run.py --all --check` before you leave, so you know what
-works at home, then again on arrival. Any module that newly fails is blocked from where you
-are. A VPN usually fixes that.
-
 `--check` draws every chart rather than just fetching, because many charts fetch extra
 series (CPI, population, rates) inside the chart itself. Drawing them all is the only way
 to test every source.
@@ -88,21 +84,6 @@ to test every source.
   are kept, because charts are only cleared after a successful fetch. Exceptions that fall
   back to the cache: the AOFM, Bank of England, Bundesbank, Japan's Ministry of Finance,
   ChinaBond, the NY Fed, ASIC and AFSA.
-- Yahoo Finance, and some Western sites, are often blocked from China without a VPN. The
-  ABS and RBA sites may be slow.
-
-To refresh the caches before going away, run `uv run run.py --all` (or `--check`) on a good
-connection.
-
-## The weekly job
-
-A launchd job (`~/Library/LaunchAgents/com.bryanpalmer.yahoo-commodities-update.plist`)
-runs `yahoo-commodities-update.sh` every Sunday at 08:00. That runs the `energy` topic
-(`aip` and `energy-markets`), then `yahoo` and `asx`, so their charts land in
-`CHARTS/energy/aip - Fuel Terminal Gate Prices/`, `CHARTS/energy/energy-markets - Energy Markets/`,
-`CHARTS/yahoo - Commodity Futures/` and `CHARTS/asx - ASX Indices/`. Its output and errors
-go to `LOGS/yahoo-commodities-log.log` and `LOGS/yahoo-commodities-err.log`. It runs only
-while you are logged in; if the Mac was asleep at 08:00, launchd runs it when the Mac wakes.
 
 ## When something fails
 
@@ -136,7 +117,6 @@ keep the output short.
 | `CHARTS/` | the charts |
 | `CACHE/`, `.readabs_cache/`, `.sdmxabs_cache/` | downloaded data; safe to delete (refetched next run) |
 | `KEYS/` | API keys (never commit) |
-| `LOGS/` | the weekly job's output |
-| `scratch/` | throwaway work; `scratch/check/` holds `--check` runs |
+| `scratch/check/` | `--check` runs |
 | `tools/` | chart comparison and footer checks |
 | `docs/` | how-it-works.md |
