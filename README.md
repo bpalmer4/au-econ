@@ -28,7 +28,8 @@ uv run run.py 6401              # ... or by catalogue number
 uv run run.py economy           # a topic: every module in it
 uv run run.py --topics          # the topic words
 uv run run.py somp --list       # the charts in one module
-uv run run.py rba-fx --charts long_run_exchange_rates   # selected charts only
+uv run run.py --all --list      # every chart in every module, with its short names
+uv run run.py rba-fx --charts long_run_exchange_rates   # just these charts; the rest of the folder is kept
 uv run run.py --all             # everything (takes a while)
 ```
 
