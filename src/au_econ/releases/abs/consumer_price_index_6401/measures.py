@@ -70,13 +70,15 @@ TREND_CHARTS = (
     ((), "", "CPI Measures: Annualised Monthly Growth with Henderson Trend"),
     (("Headline (SA)",), "underlying-only", "Core CPI Measures: Annualised Monthly Growth with Henderson Trend"),
 )
+QUARTERLY_TRIMMED_MEAN = "Qrtly Trimmed Mean CPI (SA, pre-2025 methodology)"
+QUARTERLY_TRIMMED_MEAN_FROM = pd.Period("2018Q4", freq="Q")
 GROWTH = {
     "Qrtly Headline CPI (SA, pre-2025 methodology)": (
         APPENDIX,
         "All groups CPI, seasonally adjusted",
         SEASONALLY_ADJUSTED,
     ),
-    "Qrtly Trimmed Mean CPI (SA, pre-2025 methodology)": (APPENDIX, "Trimmed Mean", SEASONALLY_ADJUSTED),
+    QUARTERLY_TRIMMED_MEAN: (APPENDIX, "Trimmed Mean", SEASONALLY_ADJUSTED),
     "Qrtly Weighted Median CPI (SA, pre-2025 methodology)": (APPENDIX, "Weighted Median", SEASONALLY_ADJUSTED),
     "Monthly Headline CPI (SA)": (MONTHLY, "All groups CPI, seasonally adjusted", SEASONALLY_ADJUSTED),
     "Monthly Trimmed Mean CPI (SA)": (MONTHLY, "Trimmed Mean", SEASONALLY_ADJUSTED),
@@ -259,21 +261,28 @@ def cpi_measures(release: AbsRelease) -> None:
 
 
 def growth(release: AbsRelease) -> None:
-    """Periodic and annual growth for each CPI measure and analytical series; recent."""
+    """Periodic and annual growth for each CPI series; recent, plus quarterly trimmed mean from 2018Q4."""
     for label, spec in GROWTH.items():
         series = _select(release, spec, unit=INDEX_NUMBERS, year_on_year=False)
         monthly = isinstance(series.index, pd.PeriodIndex) and series.index.freqstr[0] == "M"
-        growth_plot_finalise(
-            calc_growth(series),
-            plot_from=(monthly_plot_times if monthly else quarterly_plot_times)[1],
-            title=f"Growth: {label}",
-            ylabel="Per cent",
-            lfooter=f"Australia. {SERIES_TYPE_NOTES[spec[2]]}",
-            axhline=MONTHLY_CPI_TARGET if monthly else QUARTERLY_CPI_TARGET,
-            axhspan=ANNUAL_CPI_TARGET_RANGE,
-            rfooter=release.source,
-            y0=True,
-        )
+        windows: list[tuple[int | pd.Period, str]] = [
+            ((monthly_plot_times if monthly else quarterly_plot_times)[1], ""),
+        ]
+        if label == QUARTERLY_TRIMMED_MEAN:
+            windows.append((QUARTERLY_TRIMMED_MEAN_FROM, "from-dec-2018"))
+        for plot_from, tag in windows:
+            growth_plot_finalise(
+                calc_growth(series),
+                plot_from=plot_from,
+                tag=tag,
+                title=f"Growth: {label}",
+                ylabel="Per cent",
+                lfooter=f"Australia. {SERIES_TYPE_NOTES[spec[2]]}",
+                axhline=MONTHLY_CPI_TARGET if monthly else QUARTERLY_CPI_TARGET,
+                axhspan=ANNUAL_CPI_TARGET_RANGE,
+                rfooter=release.source,
+                y0=True,
+            )
 
 
 def core_measures(release: AbsRelease) -> None:

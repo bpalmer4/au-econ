@@ -70,6 +70,7 @@ SEAS_TREND_SELECTORS = (  # (selector, exact match): X28 also holds each state's
     ({UNDERUTILISED: mc.table, UNDEREMPLOYED: mc.did}, True),
     ({UNDERUTILISED: mc.table, UNDERUTILISATION_RATE: mc.did}, True),
 )
+UNEMPLOYMENT_RATE_STARTS = (*line_starts, pd.Period("2019-01", "M"))
 NOT_IN_LABOUR_FORCE = "Not in the labour force (NILF) ;  Persons ;"  # published as Original only
 COVID_SELECTORS = (  # (series type, selector without the type)
     (SEASONALLY_ADJUSTED, {"Persons": mc.did, MAIN: mc.table}),
@@ -125,7 +126,7 @@ def headline(release: AbsRelease) -> None:
             multi_start(
                 frame,
                 function=seastrend_plot_finalise,
-                starts=line_starts,
+                starts=UNEMPLOYMENT_RATE_STARTS if did == UNEMPLOYMENT_RATE else line_starts,
                 title=abs_title(did),
                 ylabel=units,
                 rfooter=release.source,

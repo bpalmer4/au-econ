@@ -70,7 +70,8 @@ DAILY = {  # country label: BIS code, for the daily charts
 # the BIS data already reaches the effective day; older entries are ignored and can be deleted.
 ADJUSTMENT_EXPIRY_DAYS = 42  # six weeks: the longest BIS reporting lag seen
 ADJUSTMENTS = {
-    "Australia": (4.60, pd.Period("2026-09-30", freq="D")),  # RBA decision 29 Sep 2026
+    "Australia": (4.85, pd.Period("2026-11-04", freq="D")),  # RBA decision 3 Nov 2026
+    "Canada": (2.50, pd.Period("2026-10-29", freq="D")),  # Bank of Canada decision 28 Oct 2026
 }
 
 COMPARABLE = ["Australia", "Canada", "Euro Area", "New Zealand", "United Kingdom", "United States"]
@@ -187,7 +188,7 @@ def _adjusted(
             frame.loc[day, country] = rate
             frame.loc[frame.index > day, country] = np.nan
             frame[country] = frame[country].ffill()
-        applied.append(f"{country} {rate:.2f} from {day.strftime('%-d %b %Y')}")
+        applied.append(f"{country} {rate:.2f} from {day.day} {day.strftime('%b %Y')}")
     return frame, tuple(applied)
 
 

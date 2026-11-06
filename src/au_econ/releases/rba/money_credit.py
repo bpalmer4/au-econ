@@ -2,7 +2,9 @@
 
 Tables: D1 (growth in financial aggregates), D2 (lending and credit aggregates), D3
 (monetary aggregates), D12 (ADI balance sheet) and D13 (monetary survey); nominal GDP
-from ABS 5206.0. D12 and D13 are Original series and run a month behind D1.
+from ABS 5206.0. D12 and D13 are Original series and run a month behind D1. Exchange
+Settlement balances come from A1 and its two archives (weekly from 1994, monthly averages
+from 1969) and A3 (daily from November 2013).
 """
 
 # --- dependencies
@@ -27,7 +29,10 @@ TITLE = "Money and Credit"
 # --- constants
 SOURCE = "RBA:"  # followed by the table(s), e.g. "RBA: D1, D2"
 ABS_GDP_SOURCE = "ABS: 5206.0"
-TABLES = ("D1", "D2", "D3", "D12", "D13")
+ES_WEEKLY_TABLES = ("A1", "Z:A1-Summary-2023")  # the same weekly series, current and archived
+ES_MONTHLY_TABLE = "Z:A1.1-Monthly-2015"  # monthly averages of the weekly data, from July 1969
+ES_DAILY_TABLE = "A3"
+TABLES = ("D1", "D2", "D3", "D12", "D13", *ES_WEEKLY_TABLES, ES_MONTHLY_TABLE, ES_DAILY_TABLE)
 MONTHS_PER_YEAR = 12
 QUARTERS_PER_YEAR = 4
 PERCENT = 100
@@ -113,6 +118,12 @@ HOUSING_CREDIT = {
 }
 HOUSING_CREDIT_CAVEAT = "Split affected by loan purpose switching. "
 
+# Exchange Settlement balances (A1, A3)
+ES_TITLE = "Exchange settlement balances"
+ES_SURPLUS_TITLE = "Surplus ES Balances"  # daily, from November 2013
+ES_TOTAL_SURPLUS_FROM = pd.Period("1990-01", freq="M")
+FULL_HISTORY = (0,)
+
 
 @dataclass(frozen=True)
 class MoneyData:
@@ -125,7 +136,7 @@ class MoneyData:
 
 # --- data
 def fetch() -> MoneyData:
-    """Fetch the D1, D2, D3, D12 and D13 tables and nominal GDP."""
+    """Fetch the money, credit and Exchange Settlement tables and nominal GDP."""
     gdp, gdp_units = get_gdp("CP", "SA")
     return MoneyData(tables={table: rba.get_table(table) for table in TABLES}, gdp=gdp, gdp_units=gdp_units)
 
@@ -228,8 +239,8 @@ def _plain_number(value: float, _position: int) -> str:
     return f"{value:g}"
 
 
-def _log_line_charts(
-    series: pd.Series,
+def _log_line_charts[DataT: (pd.Series, pd.DataFrame)](
+    series: DataT,
     starts: tuple[int, ...],
     *,
     title: str,
@@ -238,7 +249,7 @@ def _log_line_charts(
     rfooter: str,
     pre_tag: str,
 ) -> None:
-    """Chart a series on a log y-axis from each start, with 1-2-5 ticks as labelled, gridded majors.
+    """Chart a series or frame on a log y-axis from each start, with 1-2-5 ticks as labelled, gridded majors.
 
     mgplot's yscale="log" leaves the in-decade ticks minor, so they print in scientific
     notation and get no gridline; the ticks are set here between plotting and finalising.
@@ -250,7 +261,14 @@ def _log_line_charts(
         axes.yaxis.set_major_formatter(FuncFormatter(_plain_number))
         axes.yaxis.set_minor_formatter(NullFormatter())
         mg.finalise_plot(
-            axes, title=title, ylabel=ylabel, lfooter=lfooter, rfooter=rfooter, pre_tag=pre_tag, tag=f"log-{i}"
+            axes,
+            title=title,
+            ylabel=ylabel,
+            lfooter=lfooter,
+            rfooter=rfooter,
+            pre_tag=pre_tag,
+            tag=f"log-{i}",
+            legend=isinstance(series, pd.DataFrame),
         )
 
 
@@ -309,6 +327,41 @@ def money_supply(data: MoneyData) -> None:
             rfooter=f"{SOURCE} D3",
             pre_tag="d3-",
         )
+
+
+def es_balances(data: MoneyData) -> None:
+    """Chart Exchange Settlement balances on a log axis: monthly from 1969, then total and surplus from 1990."""
+    weekly = pd.concat([_by_title(data, table, ES_TITLE) for table in ES_WEEKLY_TABLES])
+    averages = weekly.groupby(level=0).first().sort_index().to_timestamp().resample("ME").mean().to_period("M")
+    archive = _by_title(data, ES_MONTHLY_TABLE, ES_TITLE)
+    total = pd.concat([archive[archive.index < averages.index[0]], averages])
+    if (total <= 0).any():
+        raise ValueError("RBA A1: Exchange Settlement balances must be positive for a log axis")
+    units = _meta_value(data, "A1", ES_TITLE, "Units")
+    monthly, unit = ra.recalibrate(total, units)
+    type_note = _type_note(_meta_value(data, "A1", ES_TITLE, "Type"))
+    lfooter = f"Australia. {type_note} Monthly averages. Data to {monthly.index[-1]}. "
+    _log_line_charts(
+        monthly,
+        FULL_HISTORY,
+        title="Exchange Settlement Balances",
+        ylabel=f"{unit} (log scale)",
+        lfooter=lfooter,
+        rfooter=f"{SOURCE} A1",
+        pre_tag="a1-",
+    )
+    surplus = _by_title(data, ES_DAILY_TABLE, ES_SURPLUS_TITLE).to_timestamp().resample("ME").mean().to_period("M")
+    both = pd.DataFrame({"Total": total, "Surplus": surplus.reindex(total.index)})
+    both, both_unit = ra.recalibrate(both[both.index >= ES_TOTAL_SURPLUS_FROM], units)
+    _log_line_charts(
+        both,
+        FULL_HISTORY,
+        title="Exchange Settlement Balances: Total and Surplus",
+        ylabel=f"{both_unit} (log scale)",
+        lfooter=f"{lfooter}Surplus from November 2013. ",
+        rfooter=f"{SOURCE} A1, A3",
+        pre_tag="a3-",
+    )
 
 
 def velocity_of_money(data: MoneyData) -> None:
@@ -564,6 +617,7 @@ def investor_share_of_housing_credit(data: MoneyData) -> None:
 
 CHARTS = (
     (money_supply, ()),
+    (es_balances, ()),
     (velocity_of_money, ()),
     (credit_growth, ()),
     (credit_vs_broad_money, ()),

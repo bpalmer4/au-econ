@@ -1,8 +1,9 @@
 """RBA interest rates: the cash rate, money-market rates, OCR futures, housing loan payments and lending rates.
 
-Tables: A2 (the cash rate target), F1.1 (the interbank overnight cash rate, monthly, from
-1976), F17 (zero-coupon forward rates, daily, from 2017), F1 (daily money-market rates),
-E13 (housing loan payments) and F5/F6 (lending rates).
+Tables: A2 (the cash rate target and the Exchange Settlement rate), F1.1 (the interbank
+overnight cash rate, monthly, from 1976), F17 (zero-coupon forward rates, daily, from 2017),
+F1 and its archive (daily money-market rates), E13 (housing loan payments) and F5/F6
+(lending rates).
 """
 
 # --- dependencies
@@ -49,6 +50,15 @@ SHORT_RATES_1M = ["Cash Rate Target", "EOD 1-month BABs/NCDs"]
 SHORT_RATES_3_6M = ["Cash Rate Target", "EOD 3-month BABs/NCDs", "EOD 6-month BABs/NCDs"]
 short_rate_starts = pd.Period("2022-01-01", freq="D"), pd.Period("2026-01-01", freq="D")
 BABS_KEY = "Key: EOD = end of day; BABs/NCDs = Bank Accepted Bills / Negotiable Certificates of Deposit. "
+F1_ARCHIVE = "Z:F1-Daily-2010"  # the daily F1 series before 2011
+
+# A2, F1: the cash rate, its target and the Exchange Settlement rate
+ES_RATE_TITLE = "New ES Rate"
+ES_RATE_NAME = "Exchange Settlement rate"
+TARGET_NAME = "Cash rate target"
+OVERNIGHT_NAME = "Interbank overnight cash rate"
+ES_RATE_ROUNDING = 2  # the rates are 0.1 to 0.25 points apart
+ES_RATE_ANNOTATE = [False, True, True]  # the overnight rate usually sits on the target
 
 # F17: zero-coupon forward rates
 FORWARD_YEARS = 1.5
@@ -89,8 +99,8 @@ class RatesData:
 
 # --- data
 def fetch() -> RatesData:
-    """Fetch the monthly and daily cash rate and the F1.1, F17, E13, F1, F5 and F6 tables."""
-    tables = {table: rba.get_table(table) for table in ("F1.1", "F17", "E13", "F1", "F5", "F6")}
+    """Fetch the monthly and daily cash rate and the A2, F1.1, F17, E13, F1 (with archive), F5 and F6 tables."""
+    tables = {table: rba.get_table(table) for table in ("A2", "F1.1", "F17", "E13", "F1", F1_ARCHIVE, "F5", "F6")}
     return RatesData(
         cash_rate=get_cash_rate().rename(CASH_RATE_NAME),
         daily_cash_rate=get_daily_cash_rate().rename(CASH_RATE_NAME),
@@ -346,6 +356,37 @@ def short_term_rates_3_6m(data: RatesData) -> None:
     )
 
 
+def cash_rate_and_es_rate(data: RatesData) -> None:
+    """Chart the overnight cash rate, its target and the ES rate since the ES rate begins, and recently."""
+    target = data.daily_cash_rate
+    overnight = pd.concat(
+        [_by_title(data, table, [OVERNIGHT_TITLE])[OVERNIGHT_TITLE] for table in (F1_ARCHIVE, "F1")]
+    ).astype(float)
+    es_rate = _by_title(data, "A2", [ES_RATE_TITLE])[ES_RATE_TITLE].astype(float)
+    frame = pd.DataFrame(
+        {
+            OVERNIGHT_NAME: overnight.reindex(target.index),
+            TARGET_NAME: target,
+            ES_RATE_NAME: es_rate.reindex(target.index, method="ffill"),
+        }
+    )
+    frame = frame[frame.index >= es_rate.index[0]]
+    mg.multi_start(
+        frame,
+        function=mg.line_plot_finalise,
+        starts=(frame.index[0], short_rate_starts[0]),
+        title="Cash Rate, Cash Rate Target and ES Rate",
+        drawstyle="steps-post",
+        ylabel="Per cent",
+        zero_y=True,
+        rfooter=f"{SOURCE} A2, F1",
+        lfooter=f"Australia. Original series. ES = Exchange Settlement. Daily data to {frame.index[-1]}. ",
+        pre_tag="a2-",
+        annotate=ES_RATE_ANNOTATE,
+        rounding=ES_RATE_ROUNDING,
+    )
+
+
 def _lending_charts(data: RatesData, table: str, wanted: dict[str, str], pre_tag: str) -> None:
     """Chart each wanted lending-rate series of one table separately."""
     frame, meta = data.tables[table]
@@ -375,6 +416,7 @@ def lending_rates(data: RatesData) -> None:
 # --- table of contents, in run order
 CHARTS = (
     (cash_rate, ()),
+    (cash_rate_and_es_rate, ()),
     (cash_rate_inflation_regime, ()),
     (long_run_policy_rate, ()),
     (zero_coupon_minmax, ()),
