@@ -24,7 +24,6 @@ from au_econ.releases.abs.dwelling_stock_6432.common import (
     DWELLINGS_CATALOGUE,
     LEGEND_SMALL,
     NATIONAL,
-    PERCENT,
     QUARTERS_PER_YEAR,
     THOUSAND,
     ComponentsFn,
@@ -134,8 +133,8 @@ def plot_dwelling_vs_civ_pop_15_growth(
     dwellings = get_published_dwellings(release) if dwellings is None else dwellings
     growth = pd.DataFrame(
         {
-            "Dwelling stock": dwellings.pct_change(QUARTERS_PER_YEAR) * PERCENT,
-            "Civilian population 15+": civ_pop_q.pct_change(QUARTERS_PER_YEAR) * PERCENT,
+            "Dwelling stock": ra.percent_change(dwellings, QUARTERS_PER_YEAR),
+            "Civilian population 15+": ra.percent_change(civ_pop_q, QUARTERS_PER_YEAR),
         }
     ).dropna(how="all")
     _growth_chart(
@@ -166,8 +165,8 @@ def plot_dwelling_vs_adults_21_growth(
     dwellings = get_published_dwellings(release) if dwellings is None else dwellings
     growth = pd.DataFrame(
         {
-            "Dwelling stock": dwellings.pct_change(QUARTERS_PER_YEAR) * PERCENT,
-            "Adults 21+": adults_q.pct_change(QUARTERS_PER_YEAR) * PERCENT,
+            "Dwelling stock": ra.percent_change(dwellings, QUARTERS_PER_YEAR),
+            "Adults 21+": ra.percent_change(adults_q, QUARTERS_PER_YEAR),
         }
     ).dropna(how="all")
     _growth_chart(
@@ -217,7 +216,8 @@ def plot_net_new_vs_breakeven(
             rfooter=sources(DWELLINGS_CATALOGUE, *pop_sources, *rfooter_extra),
             lfooter="Australia. Original series. " + lfooter_note,
             lheader=be_header,
-            rheader=f"Breakeven: {frame.iloc[-1, 1]:,.0f}/qtr;  net new: {frame.iloc[-1, 0]:,.0f}/qtr",
+            rheader=f"Breakeven: {frame['Breakeven new dwellings'].iloc[-1]:,.0f}/qtr;  "
+            f"net new: {frame['Net new dwellings'].iloc[-1]:,.0f}/qtr",
             legend=LEGEND_SMALL,
             y0=True,
             pre_tag=be_pre_tag,

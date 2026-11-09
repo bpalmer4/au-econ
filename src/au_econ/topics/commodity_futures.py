@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import mgplot as mg
 import pandas as pd
+import readabs as ra
 
 from au_econ.charting.daily_prices import (
     SOURCE_YAHOO,
@@ -85,34 +86,6 @@ def fetch() -> FuturesData:
     return FuturesData(closes=fetch_closes(tickers, None), imf_index=imf.dropna(), cpi=cpi)
 
 
-# --- helpers
-def _month_label(series: pd.Series) -> str:
-    """Return the last period of a monthly series as e.g. "Jul 2026"."""
-    last = series.dropna().index[-1]
-    if not isinstance(last, pd.Period):
-        raise TypeError("Expected a PeriodIndex")
-    return last.strftime("%b %Y")
-
-
-def _cpi_runs_above(cpi_yoy: pd.Series, threshold: float) -> list[tuple[pd.Period, pd.Period]]:
-    """Return the (first, last) quarters of each unbroken run with CPI growth above threshold."""
-    runs: list[tuple[pd.Period, pd.Period]] = []
-    start: pd.Period | None = None
-    previous: pd.Period | None = None
-    for quarter, value in cpi_yoy.items():
-        if not isinstance(quarter, pd.Period):
-            raise TypeError("Expected a PeriodIndex")
-        if value > threshold and start is None:
-            start = quarter
-        elif value <= threshold and start is not None and previous is not None:
-            runs.append((start, previous))
-            start = None
-        previous = quarter
-    if start is not None and previous is not None:
-        runs.append((start, previous))
-    return runs
-
-
 # --- charts
 def metals(data: FuturesData) -> None:
     """Precious and base metals, and iron ore: one chart each."""
@@ -160,32 +133,48 @@ def commodity_index(data: FuturesData) -> None:
 
 def commodity_index_history(data: FuturesData) -> None:
     """Chart the IMF all-commodities price index since 1992."""
+    last = data.imf_index.dropna().index[-1]
+    if not isinstance(last, pd.Period):
+        raise TypeError("Expected a PeriodIndex")
     mg.line_plot_finalise(
         data.imf_index.rename("IMF all commodities"),
         title="Global Commodity Prices: Since 1992",
         ylabel="Index (2016 = 100)",
         xlabel=None,
         annotate=True,
-        lfooter=(
-            f"IMF global price index of all commodities, monthly average. Data to {_month_label(data.imf_index)}."
-        ),
+        lfooter=f"IMF global price index of all commodities, monthly average. Data to {last.strftime('%b %Y')}.",
         rfooter=SOURCE_IMF,
     )
 
 
 def commodities_vs_cpi(data: FuturesData) -> None:
     """Commodity price growth (scaled) against Australian CPI growth, shading CPI above 3 per cent."""
-    commodity_yoy = ((data.imf_index / data.imf_index.shift(MONTHS_IN_YEAR)) - 1) * PERCENT
+    commodity_yoy = ra.percent_change(data.imf_index, MONTHS_IN_YEAR)
     commodity_yoy = commodity_yoy.dropna() / COMMODITY_SCALE
-    cpi_yoy = (((data.cpi / data.cpi.shift(QUARTERS_IN_YEAR)) - 1) * PERCENT).dropna()
+    cpi_yoy = ra.percent_change(data.cpi, QUARTERS_IN_YEAR).dropna()
     cpi_yoy.index = pd.PeriodIndex(cpi_yoy.index, freq="Q")
     cpi_monthly = pd.Series(cpi_yoy.to_numpy(), index=cpi_yoy.index.asfreq("M", how="E"), name=CPI_LABEL)
     start = commodity_yoy.index[0]
     frame = pd.DataFrame({COMMODITY_LABEL: commodity_yoy, CPI_LABEL: cpi_monthly})
     frame = frame[frame.index >= start].dropna(how="all")
+    # the (first, last) quarters of each unbroken run with CPI growth above the threshold
+    runs: list[tuple[pd.Period, pd.Period]] = []
+    run_start: pd.Period | None = None
+    previous: pd.Period | None = None
+    for quarter, value in cpi_yoy[cpi_yoy.index.asfreq("M", how="E") >= start].items():
+        if not isinstance(quarter, pd.Period):
+            raise TypeError("Expected a PeriodIndex")
+        if value > CPI_SHADE_ABOVE and run_start is None:
+            run_start = quarter
+        elif value <= CPI_SHADE_ABOVE and run_start is not None and previous is not None:
+            runs.append((run_start, previous))
+            run_start = None
+        previous = quarter
+    if run_start is not None and previous is not None:
+        runs.append((run_start, previous))
     spans = [
         {"xmin": first.asfreq("M", how="start"), "xmax": last.asfreq("M", how="end"), **CPI_SHADE}
-        for first, last in _cpi_runs_above(cpi_yoy[cpi_yoy.index.asfreq("M", how="E") >= start], CPI_SHADE_ABOVE)
+        for first, last in runs
     ]
     mg.line_plot_finalise(
         frame,

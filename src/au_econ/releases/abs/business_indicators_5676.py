@@ -113,11 +113,6 @@ def _lfooter(did: str) -> str:
     return lfooter + (note if f"{code} ;" in did else "")
 
 
-def _inventory_level(release: AbsRelease) -> pd.Series:
-    """Return the total private non-farm inventory level (CVM)."""
-    return _series(release, _row(release, INVENTORY_DID)).dropna()
-
-
 # --- charts
 def headline(release: AbsRelease) -> None:
     """Chart inventories, company profits, gross operating profits and wages: level and growth."""
@@ -218,7 +213,7 @@ def inventories_change_vs_na(release: AbsRelease) -> None:
     has farm and public authorities). CVM levels are not perfectly additive over time, so
     the difference approximates the flow.
     """
-    change = _inventory_level(release).diff().dropna()
+    change = _series(release, _row(release, INVENTORY_DID)).dropna().diff().dropna()
     na_data, na_meta = get_table(NA_INVENTORIES)
 
     def scatter_vs(na_did: str, scope: str, lheader: str = "") -> None:
@@ -263,15 +258,6 @@ def inventories_change_bars(release: AbsRelease) -> None:
     )
 
 
-def _history_factor(table: str, gdp_tag: str, level: pd.Series) -> float:
-    """Return the factor putting the inventory level on the reference basis of the vintage with the latest GDP."""
-    data, meta = ra.read_abs_cat(CATALOGUE, single_excel_only=table, history=gdp_tag, verbose=False)
-    row = meta[(meta[mc.did] == INVENTORY_DID) & (meta[mc.stype] == SA)].iloc[0]
-    past = data[table][row[mc.id]].dropna()
-    common = level.index.intersection(past.index)
-    return float((level.loc[common] / past.loc[common]).median())
-
-
 def inventories_contribution_bi(release: AbsRelease) -> None:
     """Chart the estimated inventories contribution to GDP growth from the 5676 level (a partial preview).
 
@@ -294,7 +280,15 @@ def inventories_contribution_bi(release: AbsRelease) -> None:
     factor = 1.0
     if gdp.index[-1] < level.index[-1]:
         try:
-            factor = _history_factor(str(row[mc.table]), gdp_tag, level)
+            # put the level on the reference basis of the vintage with the latest GDP
+            table = str(row[mc.table])
+            past_data, past_meta = ra.read_abs_cat(
+                CATALOGUE, single_excel_only=table, history=gdp_tag, verbose=False
+            )
+            past_row = past_meta[(past_meta[mc.did] == INVENTORY_DID) & (past_meta[mc.stype] == SA)].iloc[0]
+            past = past_data[table][past_row[mc.id]].dropna()
+            common = level.index.intersection(past.index)
+            factor = float((level.loc[common] / past.loc[common]).median())
         except (HttpError, CacheError, OSError, ValueError, KeyError, IndexError) as error:  # chart without it
             print(f"Re-referencing down-weight skipped: {error}")
 

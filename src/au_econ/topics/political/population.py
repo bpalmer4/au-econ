@@ -186,41 +186,8 @@ def _nom_trend() -> Series:
     return _nom_decomposed()[FINAL_TREND].dropna().rename("NOM trend")
 
 
-def _growth_contributions(
-    components: dict[str, Series], erp: Series, govts: DataFrame
-) -> tuple[DataFrame, DataFrame]:
-    """Return each component's compound annual and cumulative contribution to population growth by epoch.
-
-    A quarter's component is taken against the population it joined - the ERP of the quarter
-    before - which gives the growth that component contributed in that quarter. Compounding
-    those quarterly rates across the epoch runs the population forward as if only that
-    component had accrued. They do not sum to the population growth rate exactly: the ERP is
-    rebased at each Census, and that intercensal adjustment belongs to neither component.
-    """
-    annual: dict[str, Series] = {}
-    cumulative: dict[str, Series] = {}
-    for label, component in components.items():
-        quarterly_rate = (component / erp.shift(1)).dropna()
-        segments = segment_by_government(quarterly_rate, govts)
-        annual_rates: dict[str, float] = {}
-        cumulative_rates: dict[str, float] = {}
-        for name in segments.columns:
-            observed = segments[name].dropna()
-            if observed.empty:
-                raise ValueError(f"No data within the {name} epoch to decompose")
-            product = (1 + observed).prod()
-            if not isinstance(product, int | float):
-                raise TypeError(f"Expected a number compounding the {name} epoch, got {type(product).__name__}")
-            compounded = float(product)
-            annual_rates[str(name)] = (compounded ** (QUARTERS_PER_YEAR / len(observed)) - 1) * PERCENT
-            cumulative_rates[str(name)] = (compounded - 1) * PERCENT
-        annual[label] = Series(annual_rates)
-        cumulative[label] = Series(cumulative_rates)
-    return DataFrame(annual), DataFrame(cumulative)
-
-
 def _pop_components() -> dict[str, Series]:
-    """Return the two ERP growth components, keyed for _growth_contributions()."""
+    """Return the two ERP growth components, keyed by their chart labels."""
     natural, migration, _erp = _population_components()
     return {MIGRATION: migration, NATURAL_INCREASE: natural}
 
@@ -333,11 +300,27 @@ def nom_mean(govts: DataFrame) -> None:
 def growth_contributions(govts: DataFrame) -> None:
     """Chart the compound annual contribution of migration and natural increase to population growth, stacked."""
     _natural, _migration, erp = _population_components()
-    pop_annual, _pop_cumulative = _growth_contributions(
-        _pop_components(), erp, governments_since(govts, FIRST_NOM_GOVERNMENT)
-    )
+    # a quarter's component is taken against the population it joined - the ERP of the quarter
+    # before - which gives the growth that component contributed in that quarter. Compounding
+    # those quarterly rates across the epoch runs the population forward as if only that
+    # component had accrued. They do not sum to the population growth rate exactly: the ERP is
+    # rebased at each Census, and that intercensal adjustment belongs to neither component.
+    annual: dict[str, Series] = {}
+    for label, component in _pop_components().items():
+        quarterly_rate = (component / erp.shift(1)).dropna()
+        segments = segment_by_government(quarterly_rate, governments_since(govts, FIRST_NOM_GOVERNMENT))
+        annual_rates: dict[str, float] = {}
+        for name in segments.columns:
+            observed = segments[name].dropna()
+            if observed.empty:
+                raise ValueError(f"No data within the {name} epoch to decompose")
+            product = (1 + observed).prod()
+            if not isinstance(product, int | float):
+                raise TypeError(f"Expected a number compounding the {name} epoch, got {type(product).__name__}")
+            annual_rates[str(name)] = (float(product) ** (QUARTERS_PER_YEAR / len(observed)) - 1) * PERCENT
+        annual[label] = Series(annual_rates)
     mg.bar_plot_finalise(
-        pop_annual.rename(index=_two_lines),
+        DataFrame(annual).rename(index=_two_lines),
         stacked=True,
         title="Population Growth by Government: Migration and Natural Increase",
         ylabel="Per cent per year",

@@ -117,16 +117,6 @@ def _annual_wages() -> pd.Series:
     return _annual(coe) / THOUSAND
 
 
-def _short_title(title: str) -> tuple[str, str]:
-    """Abbreviate and wrap a long title; return it with the footnote explaining the abbreviations."""
-    footnote = ""
-    for wordy, (short, note) in ABBREVIATIONS.items():
-        if wordy in title and len(title) >= MAX_TITLE:
-            title = title.replace(wordy, short)
-            footnote = f"{footnote}{note}"
-    return textwrap.fill(title, width=MAX_TITLE), footnote
-
-
 # --- charts
 def hbs(release: AbsRelease) -> None:
     """Chart every household balance sheet item: the level, and as a share of annual GDP."""
@@ -135,7 +125,13 @@ def hbs(release: AbsRelease) -> None:
     annual_gdp = _annual(gdp / THOUSAND)  # $ Billions
     meta = release.meta
     for did in meta[meta[mc.table] == HBS_TABLE][mc.did]:
-        title, footnote = _short_title(f"HBS: {did[:-2]}")
+        # abbreviate a long title, with a footnote explaining the abbreviations, then wrap it
+        title, footnote = f"HBS: {did[:-2]}", ""
+        for wordy, (short, note) in ABBREVIATIONS.items():
+            if wordy in title and len(title) >= MAX_TITLE:
+                title = title.replace(wordy, short)
+                footnote = f"{footnote}{note}"
+        title = textwrap.fill(title, width=MAX_TITLE)
         original, original_units = _hbs(release, did)
         series, units = _recalibrated(original, original_units)
         print(f"Series units: {original_units}")

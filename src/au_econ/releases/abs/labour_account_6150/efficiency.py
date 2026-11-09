@@ -84,14 +84,6 @@ def _source_change(junction: pd.Period) -> dict[str, object]:
     return {"x": junction, "color": "grey", "linestyle": ":", "lw": 0.75, "label": f"Source change {junction}"}
 
 
-def _segment_ssr(y: np.ndarray, x: np.ndarray) -> float:
-    """Sum of squared residuals from an OLS regression of y on a constant and x."""
-    design = np.column_stack([np.ones_like(x), x])
-    coef = np.linalg.lstsq(design, y, rcond=None)[0]
-    resid = y - design @ coef
-    return float(resid @ resid)
-
-
 def _bai_perron_breaks(y: np.ndarray, x: np.ndarray) -> list[int]:
     """Break positions minimising BIC, by Bai-Perron dynamic programming.
 
@@ -100,10 +92,12 @@ def _bai_perron_breaks(y: np.ndarray, x: np.ndarray) -> list[int]:
     """
     n = len(y)
     h = int(BP_TRIM * n)
-    cost = np.full((n, n + 1), np.inf)  # cost[i, j]: SSR of the segment y[i:j]
+    cost = np.full((n, n + 1), np.inf)  # cost[i, j]: SSR of the OLS of y[i:j] on a constant and x[i:j]
     for i in range(n):
         for j in range(i + h, n + 1):
-            cost[i, j] = _segment_ssr(y[i:j], x[i:j])
+            design = np.column_stack([np.ones_like(x[i:j]), x[i:j]])
+            resid = y[i:j] - design @ np.linalg.lstsq(design, y[i:j], rcond=None)[0]
+            cost[i, j] = float(resid @ resid)
 
     # best[j]: the lowest SSR for y[:j] with k breaks, and those breaks
     best: dict[int, tuple[float, list[int]]] = {j: (cost[0, j], []) for j in range(h, n + 1)}

@@ -37,37 +37,6 @@ JOB_MEASURES = {
 }
 
 
-# --- helpers
-def _headline_title(did: str) -> str:
-    """Shorten an all-industries description into a chart title."""
-    return (
-        did.replace(" ;  Australia ;  Total all industries ;", "")
-        .replace(" per Labour Account", "\nper Labour Account")
-        .replace(" ; ", ", ")
-        .replace("; ", ": ")
-    )
-
-
-def _jobs_by_industry(data: LabourAccountData, stem: str) -> dict[str, pd.Series]:
-    """Seasonally adjusted jobs ('000) for one measure, keyed by industry, plus the total."""
-    meta = data.account.meta
-    rows = meta[
-        (meta[mc.table] == SUMMARY_TABLE)
-        & meta[mc.did].str.startswith(stem)
-        & (meta[mc.stype] == SEASONALLY_ADJUSTED)
-    ]
-    jobs = {
-        did.removeprefix(stem).removesuffix(" ;"): data.account.data[SUMMARY_TABLE][sid].dropna()
-        for sid, did in zip(rows[mc.id], rows[mc.did], strict=True)
-    }
-    if ALL_INDUSTRIES not in jobs or len(jobs) < MIN_JOB_SERIES:
-        raise ValueError(f"{stem!r} by industry not found in {SUMMARY_TABLE}")
-    empty = [name for name, series in jobs.items() if series.empty]
-    if empty:
-        raise ValueError(f"No {stem!r} data for: {empty}")
-    return jobs
-
-
 # --- charts
 def headline(data: LabourAccountData) -> None:
     """Every all-industries series (other than rates) against its 2009Q4-2019Q4 trend."""
@@ -84,7 +53,11 @@ def headline(data: LabourAccountData) -> None:
             continue
         postcovid_plot_finalise(
             series,
-            title=_headline_title(row[mc.did]),
+            title=row[mc.did]  # the all-industries description, shortened
+            .replace(" ;  Australia ;  Total all industries ;", "")
+            .replace(" per Labour Account", "\nper Labour Account")
+            .replace(" ; ", ", ")
+            .replace("; ", ": "),
             tag="covid",
             ylabel=units,
             start_r=TREND_START,
@@ -102,7 +75,7 @@ def growth_summary(data: LabourAccountData) -> None:
         labels = found[mc.did].str.rsplit(pat=" ;  ", n=1).str[-1].str.replace(" ;", "")
         summary = pd.DataFrame()
         for label, series_id in zip(labels, labels.index, strict=True):
-            summary[label] = table[series_id].pct_change(periods=1, fill_method=None) * 100
+            summary[label] = ra.percent_change(table[series_id], 1)
         summary_plot_finalise(
             summary,
             title=f"Q/Q Growth {title} {table.index[-1]}",
@@ -114,8 +87,23 @@ def growth_summary(data: LabourAccountData) -> None:
 def industry_shares(data: LabourAccountData) -> None:
     """Each industry's share of all filled jobs, and of all jobs (filled and vacant), in a subfolder."""
     with chart_subdir(INDUSTRY_SHARE_SUBDIR):
+        meta = data.account.meta
         for stem, (label, ylabel) in JOB_MEASURES.items():
-            jobs = _jobs_by_industry(data, stem)
+            # seasonally adjusted jobs ('000) for this measure, keyed by industry, plus the total
+            rows = meta[
+                (meta[mc.table] == SUMMARY_TABLE)
+                & meta[mc.did].str.startswith(stem)
+                & (meta[mc.stype] == SEASONALLY_ADJUSTED)
+            ]
+            jobs = {
+                did.removeprefix(stem).removesuffix(" ;"): data.account.data[SUMMARY_TABLE][sid].dropna()
+                for sid, did in zip(rows[mc.id], rows[mc.did], strict=True)
+            }
+            if ALL_INDUSTRIES not in jobs or len(jobs) < MIN_JOB_SERIES:
+                raise ValueError(f"{stem!r} by industry not found in {SUMMARY_TABLE}")
+            empty = [name for name, series in jobs.items() if series.empty]
+            if empty:
+                raise ValueError(f"No {stem!r} data for: {empty}")
             total = jobs.pop(ALL_INDUSTRIES)
             for industry, industry_jobs in jobs.items():
                 line_plot_finalise(

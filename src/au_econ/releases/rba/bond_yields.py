@@ -64,26 +64,22 @@ class BondData:
 
 
 # --- data
-def _gdp_per_capita_original() -> pd.Series:
-    """Nominal GDP per capita (Original, from 1959Q3); the SA series starts only in 1973Q3."""
-    release = fetch_release(GDP_CATALOGUE, single_excel_only=GDP_TABLE, verbose=False)
-    table, series_id, _ = ra.find_abs_id(
-        release.meta, {GDP_PER_CAPITA_DID: mc.did, "Original": mc.stype}, verbose=False
-    )
-    series = release.data[table][series_id].dropna()
-    if series.empty:
-        raise ValueError(f"No data for {GDP_PER_CAPITA_DID!r}")
-    return series
-
-
 def fetch() -> BondData:
     """Fetch the bond and overnight-rate tables, nominal GDP and nominal GDP per capita."""
     names = ("F2", "Z:F2-Daily-2013", "F2.1", "Z:F2-Monthly-2013", "F1", "Z:F1-Daily-2010")
     gdp, _ = get_gdp("CP", "SA")
+    # nominal GDP per capita, Original from 1959Q3: the SA series starts only in 1973Q3
+    release = fetch_release(GDP_CATALOGUE, single_excel_only=GDP_TABLE, verbose=False)
+    table, series_id, _ = ra.find_abs_id(
+        release.meta, {GDP_PER_CAPITA_DID: mc.did, "Original": mc.stype}, verbose=False
+    )
+    gdp_per_capita = release.data[table][series_id].dropna()
+    if gdp_per_capita.empty:
+        raise ValueError(f"No data for {GDP_PER_CAPITA_DID!r}")
     return BondData(
         tables={name: rba.get_table(name) for name in names},
         gdp=gdp,
-        gdp_per_capita=_gdp_per_capita_original(),
+        gdp_per_capita=gdp_per_capita,
     )
 
 
@@ -110,30 +106,6 @@ def _spliced(data: BondData, *sources: tuple[str, str]) -> pd.Series:
     """Splice RBA table segments, highest priority (most recent) first."""
     series, _ = ra.splice([_series(data, table, series_id) for table, series_id in sources], rebase=False)
     return series
-
-
-def _cagr(level: pd.Series) -> pd.Series:
-    """Compound annual growth (%) over the trailing CAGR_YEARS of a quarterly level."""
-    return ((level / level.shift(CAGR_YEARS * QUARTERS_PER_YEAR)) ** (1 / CAGR_YEARS) - 1) * PERCENT
-
-
-def _monthly_ten_year(data: BondData) -> pd.Series:
-    """Monthly 10-year yield: F2.1 extended back by its pre-2013 history, the current table winning on overlap."""
-    current, meta = data.tables["F2.1"]
-    match = meta[meta["Title"] == RBA_BOND_TITLE]
-    if len(match) != 1:
-        raise ValueError(f"RBA F2.1 holds {len(match)} series titled {RBA_BOND_TITLE!r}")
-    series_id = str(match["Series ID"].iloc[0])
-    history, _ = data.tables["Z:F2-Monthly-2013"]
-    if series_id not in history.columns:
-        raise ValueError(f"RBA Z:F2-Monthly-2013 has no {series_id} column")
-    joined = pd.concat(
-        [pd.to_numeric(part, errors="coerce").dropna() for part in (history[series_id], current[series_id])]
-    )
-    joined = joined[~joined.index.duplicated(keep="last")].sort_index()
-    if joined.empty:
-        raise ValueError("RBA returned no 10-year bond yields")
-    return joined
 
 
 # --- charts
@@ -224,18 +196,36 @@ def term_spread(data: BondData) -> None:
 
 def gdp_growth_vs_bond_yield(data: BondData) -> None:
     """Chart rolling 10-year nominal GDP growth (total and per capita) against the 10-year bond yield."""
-    monthly = _monthly_ten_year(data)
+    # monthly 10-year yield: F2.1 extended back by its pre-2013 history, the current table winning on overlap
+    current, meta = data.tables["F2.1"]
+    match = meta[meta["Title"] == RBA_BOND_TITLE]
+    if len(match) != 1:
+        raise ValueError(f"RBA F2.1 holds {len(match)} series titled {RBA_BOND_TITLE!r}")
+    series_id = str(match["Series ID"].iloc[0])
+    history, _ = data.tables["Z:F2-Monthly-2013"]
+    if series_id not in history.columns:
+        raise ValueError(f"RBA Z:F2-Monthly-2013 has no {series_id} column")
+    monthly = pd.concat(
+        [pd.to_numeric(part, errors="coerce").dropna() for part in (history[series_id], current[series_id])]
+    )
+    monthly = monthly[~monthly.index.duplicated(keep="last")].sort_index()
+    if monthly.empty:
+        raise ValueError("RBA returned no 10-year bond yields")
     monthly_index = monthly.index
     if not isinstance(monthly_index, pd.PeriodIndex):
         raise TypeError("Expected a monthly PeriodIndex")
     bond = monthly.groupby(monthly_index.asfreq("Q")).mean()
-    frame = pd.DataFrame(
+    levels = pd.DataFrame(
         {
-            f"Nominal GDP: rolling {CAGR_YEARS}-year CAGR": _cagr(data.gdp),
-            f"Nominal GDP per capita: rolling {CAGR_YEARS}-year CAGR": _cagr(data.gdp_per_capita),
-            "10-year Australian Government bond yield": bond,
+            f"Nominal GDP: rolling {CAGR_YEARS}-year CAGR": data.gdp,
+            f"Nominal GDP per capita: rolling {CAGR_YEARS}-year CAGR": data.gdp_per_capita,
         }
-    ).dropna()
+    )
+    frame = ra.annualise_percentages(
+        ra.percent_change(levels, CAGR_YEARS * QUARTERS_PER_YEAR), periods_per_year=1 / CAGR_YEARS
+    )
+    frame["10-year Australian Government bond yield"] = bond
+    frame = frame.dropna()
     frame = frame[frame.index >= pd.Period(TENDER_START, freq="Q")]
     mg.line_plot_finalise(
         frame,

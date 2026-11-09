@@ -60,12 +60,6 @@ STATE_LABEL_ROUND = 1
 WINDOW_TAGS = ("complete", "recent")
 
 
-def _population_and_dwelling_colors() -> list[str]:
-    """Return mgplot's palette for smoothed and raw population growth (one colour), breakeven, and net new."""
-    population, breakeven, net_new = get_color_list(3)
-    return [population, population, breakeven, net_new]
-
-
 def _extended(release: AbsRelease) -> tuple[pd.Series, pd.Series]:
     """Return the extended dwelling stock, and the same without its provisional latest quarter."""
     extended = get_extended_dwellings_count(release)
@@ -118,13 +112,15 @@ def breakeven_dwellings(release: AbsRelease) -> None:
     ).dropna()
     last = population.iloc[-1]
     population_plot, units = ra.recalibrate(population.copy(), "Number")
+    population_color, breakeven_color, net_new_color = get_color_list(3)  # mgplot's palette
     multi_start(
         population_plot,
         function=line_plot_finalise,
         starts=STANDARD_STARTS,
         title="Population growth vs new dwellings: breakeven and actual (15+)",
         ylabel=f"Per quarter ({units.lower()}s)",
-        color=_population_and_dwelling_colors(),  # the raw population line shares the smoothed one's colour
+        # the raw population line shares the smoothed one's colour
+        color=[population_color, population_color, breakeven_color, net_new_color],
         width=[2, 0.75, 2, 1.75],
         style=["-", "-", "-", "-"],
         annotate=[True, False, False, True],

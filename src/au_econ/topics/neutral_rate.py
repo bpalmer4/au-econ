@@ -66,26 +66,22 @@ class NeutralRateData:
 
 
 # --- data
-def _gdp_per_capita() -> pd.Series:
-    """Real GDP per capita: quarterly, seasonally adjusted, chain volume measures."""
+def fetch() -> NeutralRateData:
+    """Fetch the two decompositions, the cash rate target and real GDP per capita."""
+    # real GDP per capita: quarterly, seasonally adjusted, chain volume measures
     release = fetch_release(ABS_NA_CAT, single_excel_only=ABS_NA_TABLE, verbose=False)
     _, series_id, _ = ra.find_abs_id(
         release.meta,
         {ABS_NA_TABLE: mc.table, GDP_PER_CAPITA_DID: mc.did, "Seasonally Adjusted": mc.stype},
     )
-    series = release.data[ABS_NA_TABLE][series_id].dropna()
-    if series.empty:
+    gdp_per_capita = release.data[ABS_NA_TABLE][series_id].dropna()
+    if gdp_per_capita.empty:
         raise ValueError(f"ABS {ABS_NA_CAT} returned no {GDP_PER_CAPITA_DID!r} values")
-    return series
-
-
-def fetch() -> NeutralRateData:
-    """Fetch the two decompositions, the cash rate target and real GDP per capita."""
     return NeutralRateData(
         aofm=aofm.get_term_premium(AOFM_METHOD),
         acm=nyfed.get_acm_daily(),
         cash_rate=get_cash_rate(),
-        gdp_per_capita=_gdp_per_capita(),
+        gdp_per_capita=gdp_per_capita,
     )
 
 
@@ -118,22 +114,6 @@ def _aofm_forward(data: NeutralRateData) -> pd.Series:
     return _complete_months(forward).rename(FORWARD_LABEL)
 
 
-def _trend_growth_nominal(data: NeutralRateData, index: pd.PeriodIndex) -> pd.Series:
-    """Trend real per-capita GDP growth plus the inflation target, on a monthly index.
-
-    Per capita, not aggregate: the consumption-Euler link is about growth per head. Each
-    quarter's value sits on its own last month and the months between are interpolated;
-    the fill stops at the last published quarter.
-    """
-    per_capita = data.gdp_per_capita.astype(float)
-    per_capita.index = pd.PeriodIndex(per_capita.index, freq="Q")
-    yearly = (per_capita / per_capita.shift(QUARTERS_PER_YEAR) - 1) * 100
-    trend = (yearly.rolling(TREND_WINDOW_QTRS).mean() + INFLATION_TARGET).dropna()
-    trend.index = pd.PeriodIndex(trend.index).asfreq("M", how="E")  # each quarter on its last month
-    monthly = trend.reindex(trend.index.union(index)).interpolate("linear", limit_area="inside")
-    return monthly.reindex(index).rename(TREND_G_LABEL)
-
-
 # --- charts
 def rstar_proxies(data: NeutralRateData) -> None:
     """Chart the AOFM 5y5y forward against the cash rate target and trend growth plus the target.
@@ -143,11 +123,20 @@ def rstar_proxies(data: NeutralRateData) -> None:
     """
     forward = _aofm_forward(data)
     index = pd.PeriodIndex(forward.index, freq="M")
+    # trend real per-capita GDP growth plus the inflation target. Per capita, not aggregate: the
+    # consumption-Euler link is about growth per head. Each quarter's value sits on its own last
+    # month and the months between are interpolated; the fill stops at the last published quarter
+    per_capita = data.gdp_per_capita.astype(float)
+    per_capita.index = pd.PeriodIndex(per_capita.index, freq="Q")
+    yearly = ra.percent_change(per_capita, QUARTERS_PER_YEAR)
+    trend = (yearly.rolling(TREND_WINDOW_QTRS).mean() + INFLATION_TARGET).dropna()
+    trend.index = pd.PeriodIndex(trend.index).asfreq("M", how="E")  # each quarter on its last month
+    trend = trend.reindex(trend.index.union(index)).interpolate("linear", limit_area="inside")
     frame = pd.DataFrame(
         {
             FORWARD_LABEL: forward,
             CASH_LABEL: data.cash_rate.reindex(index),
-            TREND_G_LABEL: _trend_growth_nominal(data, index),
+            TREND_G_LABEL: trend.reindex(index).rename(TREND_G_LABEL),
         }
     )
     frame = frame[frame.index >= pd.Period(RSTAR_START, freq="M")]

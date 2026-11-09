@@ -21,23 +21,21 @@ DATE_ROW, FIRST_DATA_ROW = 9, 10  # dates across the date row; one visa category
 TOTAL = "Grand Total"
 
 
-def _current_url() -> str:
-    """Find the current BP0019 workbook in the data.gov.au catalogue."""
-    response = requests.get(PACKAGE_URL, params={"id": PACKAGE_ID}, headers=HEADERS, timeout=TIMEOUT)
-    response.raise_for_status()
-    for resource in response.json()["result"]["resources"]:
-        if resource.get("format", "").upper() == "XLSX" and RESOURCE_MARK in resource.get("url", "").lower():
-            return str(resource["url"])
-    raise RuntimeError("No BP0019 XLSX resource found in the data.gov.au dataset")
-
-
 def get_visa_stock() -> tuple[pd.DataFrame, pd.Timestamp]:
     """Return temporary visa holders (quarters by visa category, no grand total) and the latest date.
 
     Stocks are at quarter ends, except the latest, which can fall mid-quarter (e.g. 31 August);
     it is shown in its quarter, and its actual date is returned for footers.
     """
-    url = _current_url()
+    # the current BP0019 workbook in the data.gov.au catalogue
+    response = requests.get(PACKAGE_URL, params={"id": PACKAGE_ID}, headers=HEADERS, timeout=TIMEOUT)
+    response.raise_for_status()
+    for resource in response.json()["result"]["resources"]:
+        if resource.get("format", "").upper() == "XLSX" and RESOURCE_MARK in resource.get("url", "").lower():
+            url = str(resource["url"])
+            break
+    else:
+        raise RuntimeError("No BP0019 XLSX resource found in the data.gov.au dataset")
     print(f"Visa stock workbook: {url.rsplit('/', 1)[-1]}")
     raw = pd.read_excel(io.BytesIO(get_file(url, prefix="homeaffairs")), sheet_name=SHEET, header=None)
     dates = pd.to_datetime(raw.iloc[DATE_ROW, 1:].tolist())

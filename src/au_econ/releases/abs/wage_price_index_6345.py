@@ -150,7 +150,7 @@ def cpi_comparison(release: AbsRelease) -> None:
         legend=SMALL_LEGEND_UPPER_LEFT,
     )
     bar_plot_finalise(
-        (since.pct_change(QUARTERS_PER_PERIOD, fill_method=None) * 100).iloc[QUARTERS_PER_PERIOD:],
+        ra.percent_change(since, QUARTERS_PER_PERIOD).iloc[QUARTERS_PER_PERIOD:],
         title="CPI and WPI: Quarter-on-Quarter Growth",
         ylabel="Per cent",
         rfooter=rfooter,
@@ -159,7 +159,7 @@ def cpi_comparison(release: AbsRelease) -> None:
         y0=True,
     )
     line_plot_finalise(
-        (since.pct_change(QUARTERS_PER_YEAR, fill_method=None) * 100).iloc[QUARTERS_PER_YEAR:],
+        ra.percent_change(since, QUARTERS_PER_YEAR).iloc[QUARTERS_PER_YEAR:],
         title="CPI and WPI: Through-the-Year Growth",
         ylabel=PER_CENT_PA,
         rfooter=rfooter,

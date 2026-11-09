@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 
 import pandas as pd
+import readabs as ra
 from mgplot import bar_plot, bar_plot_finalise, finalise_plot, line_plot
 
 from au_econ.sources import oecd
@@ -114,19 +115,23 @@ def _oecd_table(dataflow: str, key: str, start: pd.Period, countries: dict[str, 
     return frame.rename(columns={code: country for country, code in countries.items()})
 
 
-def _report_missing(frame: pd.DataFrame) -> None:
-    """Print coverage of the latest quarter and how recent each country's data is."""
+def fetch() -> GdpData:
+    """Return real GDP growth, one column per OECD member, and the per-capita levels and population."""
+    levels = _oecd_table(GDP_FLOW, GDP_KEY, START, COUNTRIES)
+    growth = ra.percent_change(levels, 1).dropna(how="all")
+
+    # coverage of the latest quarter, and how recent each country's data is
     print("📊 DATA OVERVIEW")
-    print(f"   Countries: {len(frame.columns)}")
-    print(f"   Quarters: {len(frame)}")
-    print(f"   Date range: {frame.index[0]} to {frame.index[-1]}")
-    final_row = frame.iloc[-1]
-    missing = frame.columns[final_row.isna()].tolist()
+    print(f"   Countries: {len(growth.columns)}")
+    print(f"   Quarters: {len(growth)}")
+    print(f"   Date range: {growth.index[0]} to {growth.index[-1]}")
+    final_row = growth.iloc[-1]
+    missing = growth.columns[final_row.isna()].tolist()
     if missing:
-        available = frame.columns[final_row.notna()].tolist()
+        available = growth.columns[final_row.notna()].tolist()
         more = "..." if len(missing) > REPORT_NAMES else ""
         print(f"\n📅 LATEST PERIOD: {final_row.name}")
-        print(f"   Missing data: {len(missing)}/{len(frame.columns)} countries")
+        print(f"   Missing data: {len(missing)}/{len(growth.columns)} countries")
         print(f"   Countries missing data: {', '.join(missing[:REPORT_NAMES])}{more}")
         if available:
             more = "..." if len(available) > REPORT_NAMES else ""
@@ -134,18 +139,11 @@ def _report_missing(frame: pd.DataFrame) -> None:
     else:
         print(f"\n✅ Complete data for latest period: {final_row.name}")
     print("\n📈 MOST RECENT DATA BY COUNTRY:")
-    last_dates = frame.apply(lambda column: column.last_valid_index()).sort_values(ascending=False)
+    last_dates = growth.apply(lambda column: column.last_valid_index()).sort_values(ascending=False)
     for country in last_dates.head(REPORT_COUNTRIES).index:
         print(f"   {country:<20}: {last_dates[country]}")
     if len(last_dates) > REPORT_COUNTRIES:
         print(f"   ... and {len(last_dates) - REPORT_COUNTRIES} more countries")
-
-
-def fetch() -> GdpData:
-    """Return real GDP growth, one column per OECD member, and the per-capita levels and population."""
-    levels = _oecd_table(GDP_FLOW, GDP_KEY, START, COUNTRIES)
-    growth = (levels.pct_change(fill_method=None) * 100).dropna(how="all")
-    _report_missing(growth)
     print("\nLatest quarterly growth rates:")
     print(growth.tail())
     for country, reason in PER_CAPITA_EXCLUDED.items():
@@ -191,79 +189,6 @@ def _latest(flags: pd.DataFrame, what: str) -> None:
     print(", ".join(latest[latest].index.tolist()))
 
 
-def _contraction_counts(data: pd.DataFrame) -> pd.Series:
-    """Count the countries with negative Q/Q growth, each quarter from COUNT_START."""
-    counts = (data < 0).sum(axis=1)
-    return counts[counts.index >= COUNT_START]
-
-
-def _recession_counts(data: pd.DataFrame) -> pd.Series:
-    """Count the countries in technical recession (two negative quarters running), each quarter."""
-    counts = ((data < 0) & (data.shift(1) < 0)).sum(axis=1)
-    return counts[counts.index >= COUNT_START]
-
-
-def _post_covid(data: pd.DataFrame) -> pd.DataFrame:
-    """Growth from POST_COVID_START, for countries with any data in that span."""
-    return data.loc[data.index >= POST_COVID_START].dropna(how="all", axis=1)
-
-
-def _cumulative_growth(data: pd.DataFrame, base: pd.Period) -> pd.Series:
-    """Cumulative growth since base to each country's latest quarter, ascending.
-
-    Each label carries the country's latest quarter (e.g. "Japan 25Q2").
-    """
-    since = data.loc[data.index > base].dropna(how="all", axis=1)
-    growth = ((1 + since / 100).cumprod() - 1) * 100
-    final = {}
-    for country in growth.columns:
-        last = growth[country].last_valid_index()
-        if last is not None:
-            final[f"{country} {str(last)[2:]}"] = growth[country].loc[last]
-    return pd.Series(final).sort_values()
-
-
-def _negative_quarters(data: pd.DataFrame) -> pd.Series:
-    """Count each country's negative quarters since POST_COVID_START, ascending."""
-    return (_post_covid(data) < 0).sum().sort_values()
-
-
-def _cumulative_growth_per_capita(data: GdpData, base: pd.Period) -> pd.Series:
-    """Cumulative real GDP per capita growth since base, ascending.
-
-    Runs to each country's latest GDP quarter. Where that is past the per-capita series,
-    per capita is extended by (1 + GDP growth) / (1 + population growth), with population
-    growth projected at its average over the last PROJECTION_WINDOW published quarters
-    where it is not yet published; those labels end in "*". A country whose population is
-    more than MAX_PROJECTION quarters behind its GDP is dropped.
-    """
-    final: dict[str, float] = {}
-    for country in data.per_capita.columns:
-        levels = data.per_capita[country].dropna()
-        if base not in levels.index:
-            raise ValueError(f"OECD per capita: no {base} value for {country}")
-        last, gdp_last = levels.index[-1], data.growth[country].last_valid_index()
-        if not isinstance(last, pd.Period) or not isinstance(gdp_last, pd.Period):
-            raise TypeError(f"{country}: expected quarterly periods")
-        level, projected = levels.iloc[-1], False
-        if gdp_last > last:
-            population_growth = data.population[country].dropna().pct_change()
-            average = population_growth.iloc[-PROJECTION_WINDOW:].mean()
-            gap = gdp_last.ordinal - population_growth.index[-1].ordinal
-            if gap > MAX_PROJECTION:
-                print(f"{country}: population {gap} quarters behind GDP (cap {MAX_PROJECTION}); dropped")
-                continue
-            for quarter in pd.period_range(last + 1, gdp_last, freq="Q"):
-                quarter_growth = population_growth.get(quarter, average)
-                level *= (1 + data.growth.at[quarter, country] / 100) / (1 + quarter_growth)
-            if gap > 0:
-                projected = True
-                print(f"{country}: population projected {gap} quarter(s) at {average:.2%} a quarter")
-            last = gdp_last
-        final[f"{country} {str(last)[2:]}{'*' if projected else ''}"] = (level / levels.loc[base] - 1) * 100
-    return pd.Series(final).sort_values()
-
-
 def _country_bars(values: pd.Series, title: str, ylabel: str, lfooter: str = "", rfooter: str = SOURCE) -> None:
     """Bar chart with one bar per country, names small and vertical."""
     ax = bar_plot(values, label_rotation=VERTICAL)
@@ -285,8 +210,9 @@ def world_context(data: GdpData) -> None:
 def contractions(data: GdpData) -> None:
     """Chart the number of countries with a quarterly GDP contraction."""
     growth = data.growth
+    counts = (growth < 0).sum(axis=1)
     bar_plot_finalise(
-        _contraction_counts(growth),
+        counts[counts.index >= COUNT_START],
         title="Number of OECD Countries with Quarterly GDP Contraction",
         ylabel="Count",
         rfooter=SOURCE,
@@ -298,8 +224,9 @@ def contractions(data: GdpData) -> None:
 def recessions(data: GdpData) -> None:
     """Chart the number of countries in technical recession."""
     growth = data.growth
+    counts = ((growth < 0) & (growth.shift(1) < 0)).sum(axis=1)  # two negative quarters running
     bar_plot_finalise(
-        _recession_counts(growth),
+        counts[counts.index >= COUNT_START],
         title="Number of OECD Countries in Technical Recession",
         ylabel="Count",
         rfooter=SOURCE,
@@ -311,8 +238,16 @@ def recessions(data: GdpData) -> None:
 def cumulative_growth(data: GdpData) -> None:
     """Cumulative GDP growth by country, since each of BASES."""
     for base in BASES:
+        # to each country's latest quarter, which its label carries (e.g. "Japan 25Q2")
+        since = data.growth.loc[data.growth.index > base].dropna(how="all", axis=1)
+        growth = ((1 + since / 100).cumprod() - 1) * 100
+        final = {}
+        for country in growth.columns:
+            last = growth[country].last_valid_index()
+            if last is not None:
+                final[f"{country} {str(last)[2:]}"] = growth[country].loc[last]
         _country_bars(
-            _cumulative_growth(data.growth, base),
+            pd.Series(final).sort_values(),
             title=f"Cumulative GDP growth since {base}",
             ylabel="Per cent",
             lfooter=f"{NATIONS} To latest available data; see x-axis labels. {SEAS_ADJ}",
@@ -321,9 +256,38 @@ def cumulative_growth(data: GdpData) -> None:
 
 def cumulative_growth_per_capita(data: GdpData) -> None:
     """Cumulative real GDP per capita growth by country, since each of BASES."""
+    # runs to each country's latest GDP quarter; where that is past the per-capita series, per
+    # capita is extended by (1 + GDP growth) / (1 + population growth), with population growth
+    # projected at its average over the last PROJECTION_WINDOW published quarters where it is not
+    # yet published (those labels end in "*"); a country whose population is more than
+    # MAX_PROJECTION quarters behind its GDP is dropped
     for base in BASES:
+        final: dict[str, float] = {}
+        for country in data.per_capita.columns:
+            levels = data.per_capita[country].dropna()
+            if base not in levels.index:
+                raise ValueError(f"OECD per capita: no {base} value for {country}")
+            last, gdp_last = levels.index[-1], data.growth[country].last_valid_index()
+            if not isinstance(last, pd.Period) or not isinstance(gdp_last, pd.Period):
+                raise TypeError(f"{country}: expected quarterly periods")
+            level, projected = levels.iloc[-1], False
+            if gdp_last > last:
+                population_growth = data.population[country].dropna().pct_change()
+                average = population_growth.iloc[-PROJECTION_WINDOW:].mean()
+                gap = gdp_last.ordinal - population_growth.index[-1].ordinal
+                if gap > MAX_PROJECTION:
+                    print(f"{country}: population {gap} quarters behind GDP (cap {MAX_PROJECTION}); dropped")
+                    continue
+                for quarter in pd.period_range(last + 1, gdp_last, freq="Q"):
+                    quarter_growth = population_growth.get(quarter, average)
+                    level *= (1 + data.growth.at[quarter, country] / 100) / (1 + quarter_growth)
+                if gap > 0:
+                    projected = True
+                    print(f"{country}: population projected {gap} quarter(s) at {average:.2%} a quarter")
+                last = gdp_last
+            final[f"{country} {str(last)[2:]}{'*' if projected else ''}"] = (level / levels.loc[base] - 1) * 100
         _country_bars(
-            _cumulative_growth_per_capita(data, base),
+            pd.Series(final).sort_values(),
             title=f"Cumulative GDP per capita growth since {base}",
             ylabel="Per cent",
             lfooter=PER_CAPITA_LFOOTER,
@@ -333,8 +297,9 @@ def cumulative_growth_per_capita(data: GdpData) -> None:
 
 def negative_quarters(data: GdpData) -> None:
     """Chart each country's number of negative GDP quarters since 2022Q1."""
+    post_covid = data.growth.loc[data.growth.index >= POST_COVID_START].dropna(how="all", axis=1)
     _country_bars(
-        _negative_quarters(data.growth),
+        (post_covid < 0).sum().sort_values(),
         title=f"Number of negative GDP quarters since {POST_COVID_START}",
         ylabel="Count",
         lfooter=f"{NATIONS} {SEAS_ADJ}",

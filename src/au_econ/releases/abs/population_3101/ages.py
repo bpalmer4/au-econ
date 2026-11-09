@@ -2,7 +2,6 @@
 
 # --- dependencies
 from functools import cache
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -24,9 +23,6 @@ from au_econ.releases.abs.population_3101.common import (
     PopulationData,
     recalibrated,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 # --- constants
 HALF = 0.5
@@ -98,13 +94,6 @@ def _life_table_qx() -> pd.DataFrame:
     return qx
 
 
-def _weighted_age_quantiles(weights: pd.Series, quantiles: Sequence[float]) -> np.ndarray:
-    """Return the ages at cumulative-weight quantiles of a non-negative, age-indexed series."""
-    clipped = weights.clip(lower=0).sort_index()
-    cumulative = (clipped.cumsum() - HALF * clipped) / clipped.sum()
-    return np.interp(quantiles, cumulative.to_numpy(), clipped.index.to_numpy(dtype=float))
-
-
 def _australia(data: PopulationData, group: str) -> pd.DataFrame:
     return age_data(data, AUSTRALIA_AGE_TABLE, group)[1].sort_index(axis=1)
 
@@ -122,14 +111,6 @@ def _june_row(frame: pd.DataFrame, period: pd.Period) -> pd.Series:
     return rows.iloc[0]
 
 
-def _by_age(frame: pd.DataFrame) -> pd.DataFrame:
-    """Return the frame on a RangeIndex of age, which mgplot can plot; the ages must be contiguous."""
-    ages = range(int(frame.index.min()), int(frame.index.max()) + 1)
-    if list(frame.index) != list(ages):
-        raise ValueError("Expected contiguous ages in order")
-    return frame.set_axis(pd.RangeIndex(ages.start, ages.stop), axis=0)
-
-
 # --- charts
 def state_age_profiles(data: PopulationData) -> None:
     """Chart the latest population distribution by age for each jurisdiction (Female, Male, Persons)."""
@@ -141,7 +122,12 @@ def state_age_profiles(data: PopulationData) -> None:
             period = frame.index[-1]
             latest = frame.iloc[-1]
             compositions[state] = hma(latest / latest.sum() * PERCENT, HMA_SMOOTHER)
-        profiles = _by_age(pd.DataFrame(compositions))
+        # on a RangeIndex of age, which mgplot can plot; the ages must be contiguous
+        profiles = pd.DataFrame(compositions)
+        ages = range(int(profiles.index.min()), int(profiles.index.max()) + 1)
+        if list(profiles.index) != list(ages):
+            raise ValueError("Expected contiguous ages in order")
+        profiles = profiles.set_axis(pd.RangeIndex(ages.start, ages.stop), axis=0)
         axes = line_plot(
             profiles,
             color=[STATE_COLORS[state] for state in profiles.columns],
@@ -290,7 +276,12 @@ def age_transition_decomposition(data: PopulationData) -> None:
 
     def age_box(weights: pd.Series, face: str, edge: str, label: str) -> None:
         """Draw where a component sits by age: box the middle 50%, whiskers the middle 80%, tick the median."""
-        p10, p25, p50, p75, p90 = _weighted_age_quantiles(weights, BOX_QUANTILES)
+        # the ages at cumulative-weight quantiles
+        clipped = weights.clip(lower=0).sort_index()
+        cumulative = (clipped.cumsum() - HALF * clipped) / clipped.sum()
+        p10, p25, p50, p75, p90 = np.interp(
+            BOX_QUANTILES, cumulative.to_numpy(), clipped.index.to_numpy(dtype=float)
+        )
         axes.bxp(
             [{"med": p50, "q1": p25, "q3": p75, "whislo": p10, "whishi": p90, "fliers": []}],
             positions=[1.0],

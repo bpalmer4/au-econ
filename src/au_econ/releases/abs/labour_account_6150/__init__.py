@@ -20,7 +20,7 @@ from au_econ.releases.abs.labour_account_6150.common import (
     SUMMARY_TABLE,
     LabourAccountData,
 )
-from au_econ.sources.abs import AbsRelease, fetch_release
+from au_econ.sources.abs import fetch_release
 
 # --- module contract
 RELEASE = ("6150", "la")
@@ -33,8 +33,10 @@ IDENTITY_TOLERANCE = 0.0001  # '000 jobs
 
 
 # --- data
-def _check_jobs_identity(account: AbsRelease) -> None:
-    """Check filled jobs plus job vacancies equals total jobs, every quarter."""
+def fetch() -> LabourAccountData:
+    """Fetch the Labour Account, check its jobs identity, and fetch its comparators."""
+    account = fetch_release(CATALOGUE)
+    # filled jobs plus job vacancies must equal total jobs, every quarter
     meta = account.meta
     parts = {}
     for did in (LA_FILLED_JOBS, LA_VACANCIES, LA_TOTAL_JOBS):
@@ -44,12 +46,6 @@ def _check_jobs_identity(account: AbsRelease) -> None:
     misses = int((gap.abs() > IDENTITY_TOLERANCE).sum())
     if misses:
         raise ValueError(f"ABS {CATALOGUE}: filled jobs + vacancies != total jobs in {misses} quarters")
-
-
-def fetch() -> LabourAccountData:
-    """Fetch the Labour Account, check its jobs identity, and fetch its comparators."""
-    account = fetch_release(CATALOGUE)
-    _check_jobs_identity(account)
     return LabourAccountData(
         account=account,
         labour_force=fetch_release(LFS_CATALOGUE, single_excel_only=LFS_TABLE),

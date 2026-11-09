@@ -76,25 +76,19 @@ def _spliced(*, extend_bis: bool) -> tuple[Series, DataFrame]:
     return ra.splice([abs_level, bis], rebase=True, name="Mean dwelling price")
 
 
-def _deflated(nominal: Series) -> tuple[Series, str]:
-    """Deflate by the long-run headline CPI, in the prices of the latest CPI quarter.
-
-    The CPI covers new dwellings and rents, not established houses, so there is no circularity.
-    """
-    cpi, _units, _stype = get_cpi("headline")
-    real = (nominal / (cpi / cpi.iloc[-1])).dropna()
-    if real.empty:
-        raise ValueError("No overlap between the house-price series and the CPI")
-    return real.rename("Real mean dwelling price"), f"$ ({cpi.index[-1]} prices)"
-
-
 @cache
 def _house_prices(*, extend_bis: bool, real: bool, seasonally_adjusted: bool) -> tuple[Series, str, str]:
     """Build the level for one combination of options (cached; not for mutation)."""
     series, _report = _spliced(extend_bis=extend_bis)
     units, stype = "$", ORIGINAL
     if real:
-        series, units = _deflated(series)
+        # deflate by the long-run headline CPI, in the prices of its latest quarter; the CPI
+        # covers new dwellings and rents, not established houses, so there is no circularity
+        cpi, _units, _stype = get_cpi("headline")
+        series = (series / (cpi / cpi.iloc[-1])).dropna()
+        if series.empty:
+            raise ValueError("No overlap between the house-price series and the CPI")
+        series, units = series.rename("Real mean dwelling price"), f"$ ({cpi.index[-1]} prices)"
     if seasonally_adjusted:
         series, stype = seasonally_adjust(series), SEASONALLY_ADJUSTED
     return series, units, stype

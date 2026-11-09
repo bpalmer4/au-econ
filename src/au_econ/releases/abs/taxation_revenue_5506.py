@@ -108,7 +108,7 @@ def totals(data: TaxData) -> None:
 
 def growth(data: TaxData) -> None:
     """Chart annual growth in total taxation revenue: the Commonwealth against all levels of government."""
-    frame = pd.DataFrame({level: data.levels[level][TOTAL].pct_change() * PERCENT for level in (CW, ALL)})
+    frame = pd.DataFrame({level: ra.percent_change(data.levels[level][TOTAL], 1) for level in (CW, ALL)})
     mg.line_plot_finalise(
         frame.dropna(how="all"),
         title="Total Taxation Revenue: Annual Growth",

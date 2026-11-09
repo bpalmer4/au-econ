@@ -33,19 +33,15 @@ PER_PAGE = 1000
 RESPONSE_PARTS = 2  # a data page is [page metadata, rows]
 
 
-def _current_url() -> str:
-    """Find the current monthly workbook link on the Commodity Markets page."""
+def get_commodity_prices() -> tuple[pd.DataFrame, pd.Series]:
+    """Return monthly prices (one column per commodity label) and each commodity's units (US$ ...)."""
+    # the current monthly workbook link on the Commodity Markets page
     response = requests.get(LANDING_PAGE, headers=HEADERS, timeout=TIMEOUT)
     response.raise_for_status()
     match = LINK.search(response.text)
     if match is None:
         raise ValueError(f"Could not find CMO-Historical-Data-Monthly.xlsx URL on {LANDING_PAGE}")
-    return match.group(0)
-
-
-def get_commodity_prices() -> tuple[pd.DataFrame, pd.Series]:
-    """Return monthly prices (one column per commodity label) and each commodity's units (US$ ...)."""
-    url = _current_url()
+    url = match.group(0)
     print(f"Data URL: {url}")
     workbook = get_file(url, prefix="worldbank")
     sheet = pd.read_excel(io.BytesIO(workbook), sheet_name=SHEET, header=None, na_values=MISSING, index_col=0)

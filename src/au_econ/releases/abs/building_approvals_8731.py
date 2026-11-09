@@ -13,7 +13,7 @@ import pandas as pd
 import readabs as ra
 from mgplot import line_plot_finalise, multi_start, seastrend_plot_finalise, series_growth_plot_finalise
 from readabs import metacol as mc
-from statsmodels.regression.linear_model import OLS, RegressionResults
+from statsmodels.regression.linear_model import OLS
 from statsmodels.stats.stattools import durbin_watson
 from statsmodels.tools.tools import add_constant
 
@@ -125,15 +125,6 @@ def _building_value(release: AbsRelease, table: str, did: str, stype: str) -> tu
     return series, units
 
 
-def _civ_pop_national() -> pd.Series:
-    """Return the national civilian population aged 15+, in persons, monthly (6202.0, Original)."""
-    data, meta = ra.read_abs_cat(LFS_CATALOGUE, single_excel_only=LFS_NATIONAL_TABLE)
-    _table, series_id, _units = ra.find_abs_id(
-        meta, {CIV_POP_DID: mc.did, LFS_NATIONAL_TABLE: mc.table, ORIGINAL: mc.stype}
-    )
-    return data[LFS_NATIONAL_TABLE][series_id].dropna() * THOUSAND
-
-
 def _hbar(series: pd.Series, title: str, xlabel: str, *, rounding: bool | int, rfooter: str) -> None:
     """Draw a horizontal bar chart by state, sorted, in state colours."""
     by_state = series.rename(index=dict(zip(mg.state_names, mg.state_abbrs, strict=True))).sort_values()
@@ -148,53 +139,6 @@ def _hbar(series: pd.Series, title: str, xlabel: str, *, rounding: bool | int, r
         xlabel=xlabel,
         rfooter=rfooter,
         lfooter="Australia. Original series. ",
-    )
-
-
-def _dur12() -> pd.Series:
-    """Return the four-quarter change in the SA unemployment rate (6202.0), from complete quarters."""
-    data, meta = ra.read_abs_cat(LFS_CATALOGUE, single_excel_only=LFS_NATIONAL_TABLE)
-    _table, series_id, _units = ra.find_abs_id(
-        meta, {"Unemployment rate ;  Persons ;": mc.did, LFS_NATIONAL_TABLE: mc.table, SA: mc.stype}
-    )
-    return _to_quarterly(data[LFS_NATIONAL_TABLE][series_id].dropna(), "mean").diff(QUARTERS_PER_YEAR)
-
-
-def _fit_model(approvals: pd.Series, dur12: pd.Series, label: str) -> RegressionResults:
-    """Fit QoQ(t) = b0 + b1 QoQ(t-1) + b2 dUR12(t), with HAC (Newey-West) standard errors."""
-    qoq = approvals.pct_change(1) * PERCENT
-    frame = pd.DataFrame({"qoq": qoq, "qoq_lag1": qoq.shift(1), "dur12": dur12}).dropna()
-    model = OLS(frame["qoq"], add_constant(frame[["qoq_lag1", "dur12"]])).fit(
-        cov_type="HAC", cov_kwds={"maxlags": HAC_LAGS}
-    )
-    print(f"=== {label} ===")
-    print(model.summary())
-    print(f"Durbin-Watson: {durbin_watson(model.resid):.2f}\n")
-    return model
-
-
-def _plot_model(model: RegressionResults, approvals: pd.Series, dur12: pd.Series, *, label: str, tag: str) -> None:
-    """Chart modelled against actual approvals; the model runs a quarter past the actuals as a nowcast."""
-    qoq = approvals.pct_change(1) * PERCENT
-    design = pd.DataFrame({"qoq_lag1": qoq.shift(1), "dur12": dur12}).dropna()
-    fitted = approvals.shift(1).reindex(design.index) * (
-        1 + model.predict(add_constant(design, has_constant="add")) / PERCENT
-    )
-    multi_start(
-        pd.DataFrame({"Actual": approvals, "Modelled": fitted}).dropna(how="all"),
-        function=line_plot_finalise,
-        starts=quarterly_plot_times,
-        title=f"Building Approvals Model: {label}",
-        ylabel="Residential dwelling units / quarter",
-        rheader="QoQ(t) = β₀ + β₁·QoQ(t-1) + β₂·ΔUR₁₂(t)",
-        rfooter=WITH_LFS_SOURCE,
-        lfooter="Australia. Seasonally adjusted, quarterly. "
-        "QoQ growth on its lag and the 12m change in unemployment. "
-        f"Adj. R²={model.rsquared_adj:.2f}. ",
-        width=[2, 1.5],
-        style=["-", "--"],
-        annotate=False,
-        tag=tag,
     )
 
 
@@ -402,7 +346,11 @@ def approvals_by_state(release: AbsRelease) -> None:
 def approvals_vs_civpop(release: AbsRelease) -> None:
     """Chart approvals per 1,000 adults, per new adult, and per new adult clipped past the COVID spike."""
     approvals = _selected(release, APPROVALS_TABLE, TOTAL_DID, SA)[0].dropna()
-    civpop = _civ_pop_national()
+    lfs, lfs_meta = ra.read_abs_cat(LFS_CATALOGUE, single_excel_only=LFS_NATIONAL_TABLE)
+    _table, civpop_id, _units = ra.find_abs_id(
+        lfs_meta, {CIV_POP_DID: mc.did, LFS_NATIONAL_TABLE: mc.table, ORIGINAL: mc.stype}
+    )
+    civpop = lfs[LFS_NATIONAL_TABLE][civpop_id].dropna() * THOUSAND  # civilian population 15+, persons
     common_index = approvals.index.intersection(civpop.index)
     approvals, civpop = approvals.loc[common_index], civpop.loc[common_index]
 
@@ -442,11 +390,46 @@ def approvals_vs_civpop(release: AbsRelease) -> None:
 
 def approvals_models(release: AbsRelease) -> None:
     """Fit and chart the quarterly approvals model for total dwellings and houses."""
-    dur12 = _dur12()
+    # four-quarter change in the SA unemployment rate, from complete quarters
+    lfs, lfs_meta = ra.read_abs_cat(LFS_CATALOGUE, single_excel_only=LFS_NATIONAL_TABLE)
+    _table, rate_id, _units = ra.find_abs_id(
+        lfs_meta, {"Unemployment rate ;  Persons ;": mc.did, LFS_NATIONAL_TABLE: mc.table, SA: mc.stype}
+    )
+    dur12 = _to_quarterly(lfs[LFS_NATIONAL_TABLE][rate_id].dropna(), "mean").diff(QUARTERS_PER_YEAR)
     for did, label, tag in ((TOTAL_DID, "Total dwellings", "total"), (HOUSES_DID, "Houses", "houses")):
         approvals = _to_quarterly(_selected(release, APPROVALS_TABLE, did, SA)[0].dropna(), "sum")
-        model = _fit_model(approvals, dur12, label)
-        _plot_model(model, approvals, dur12, label=label, tag=tag)
+
+        # fit QoQ(t) = b0 + b1 QoQ(t-1) + b2 dUR12(t), with HAC (Newey-West) standard errors
+        qoq = ra.percent_change(approvals, 1)
+        frame = pd.DataFrame({"qoq": qoq, "qoq_lag1": qoq.shift(1), "dur12": dur12}).dropna()
+        model = OLS(frame["qoq"], add_constant(frame[["qoq_lag1", "dur12"]])).fit(
+            cov_type="HAC", cov_kwds={"maxlags": HAC_LAGS}
+        )
+        print(f"=== {label} ===")
+        print(model.summary())
+        print(f"Durbin-Watson: {durbin_watson(model.resid):.2f}\n")
+
+        # modelled against actual; the model runs a quarter past the actuals as a nowcast
+        design = pd.DataFrame({"qoq_lag1": qoq.shift(1), "dur12": dur12}).dropna()
+        fitted = approvals.shift(1).reindex(design.index) * (
+            1 + model.predict(add_constant(design, has_constant="add")) / PERCENT
+        )
+        multi_start(
+            pd.DataFrame({"Actual": approvals, "Modelled": fitted}).dropna(how="all"),
+            function=line_plot_finalise,
+            starts=quarterly_plot_times,
+            title=f"Building Approvals Model: {label}",
+            ylabel="Residential dwelling units / quarter",
+            rheader="QoQ(t) = β₀ + β₁·QoQ(t-1) + β₂·ΔUR₁₂(t)",
+            rfooter=WITH_LFS_SOURCE,
+            lfooter="Australia. Seasonally adjusted, quarterly. "
+            "QoQ growth on its lag and the 12m change in unemployment. "
+            f"Adj. R²={model.rsquared_adj:.2f}. ",
+            width=[2, 1.5],
+            style=["-", "--"],
+            annotate=False,
+            tag=tag,
+        )
 
 
 def value_nominal(release: AbsRelease) -> None:

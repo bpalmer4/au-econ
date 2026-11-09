@@ -41,6 +41,7 @@ APPENDIX_NOTE = "Quarterly CPI measures are from Appendix 1a. "
 ANNUAL_PCT = "CPI (annual % change)"
 CORE_COLOURS = ("darkblue", "darkorange", "darkblue", "darkorange")
 CORE_STYLES = ("-", "-", "--", "--")
+CORE_ROUNDING = 1  # decimal places in the endpoint labels
 TREND_COLOURS = ("brown", "cornflowerblue", "darkorange")
 TREND_WIDTHS = (0.75, 2.5)  # thin monthly lines, thick trend lines
 
@@ -195,51 +196,13 @@ def long_headline(release: AbsRelease) -> pd.Series:
 def _quarterly_growth(release: AbsRelease) -> pd.DataFrame:
     """Return quarterly growth for each noise measure, over the quarters they all cover."""
     growth = {
-        label: _select(release, spec, unit=INDEX_NUMBERS, year_on_year=False).pct_change() * 100
+        label: ra.percent_change(_select(release, spec, unit=INDEX_NUMBERS, year_on_year=False), 1)
         for label, spec in NOISE.items()
     }
     frame = pd.DataFrame(growth).dropna()
     if frame.empty:
         raise ValueError("No quarters common to the CPI noise measures")
     return frame
-
-
-def _noise_statistics(frame: pd.DataFrame) -> tuple[tuple[pd.Series, str, str, str], ...]:
-    """Return (statistic, title, xlabel, reading note) for each measure of noise."""
-    trend = frame.apply(lambda column: hma(column, QUARTERLY_HENDERSON_TERMS))
-    errors = (frame - trend).abs()
-    return (
-        (
-            frame.apply(lambda column: column.autocorr(1)),
-            "Stability of Quarterly CPI Measures",
-            "Correlation of quarterly growth with the previous quarter's",
-            "Higher is better. ",
-        ),
-        (
-            frame.diff().std(),
-            "Volatility of Quarterly CPI Measures",
-            "Std. dev. of the change in quarterly growth (percentage points)",
-            "Lower is better. ",
-        ),
-        (
-            errors.mean(),
-            "Mean Absolute Error from Trend: Quarterly CPI Measures",
-            "Mean absolute gap between quarterly growth and its trend (ppts)",
-            TREND_NOTE + "Lower is better. ",
-        ),
-        (
-            errors.std(),
-            "Spread of Absolute Errors from Trend: Quarterly CPI Measures",
-            "Std. dev. of absolute gaps between quarterly growth and its trend",
-            TREND_NOTE + "Lower is better. ",
-        ),
-    )
-
-
-def _level_relative(frame: pd.DataFrame) -> pd.DataFrame:
-    """Return each underlying measure's cumulated price level relative to headline (headline = 100)."""
-    levels = (1 + frame / 100).cumprod()
-    return levels[list(UNDERLYING)].div(levels[BIAS_BASE], axis=0) * HEADLINE_LEVEL
 
 
 # --- charts
@@ -298,6 +261,8 @@ def core_measures(release: AbsRelease) -> None:
         lfooter=LFOOTER + APPENDIX_NOTE,
         color=list(CORE_COLOURS),
         style=list(CORE_STYLES),
+        annotate=True,
+        rounding=CORE_ROUNDING,
         rfooter=release.source,
         y0=True,
     )
@@ -361,7 +326,34 @@ def quarterly_noise(release: AbsRelease) -> None:
     """Noise in quarterly growth, headline against the underlying measures, ranked four ways."""
     frame = _quarterly_growth(release)
     span = f"Data from {frame.index[0]} to {frame.index[-1]}. "
-    for statistic, title, xlabel, note in _noise_statistics(frame):
+    trend = frame.apply(lambda column: hma(column, QUARTERLY_HENDERSON_TERMS))
+    errors = (frame - trend).abs()
+    for statistic, title, xlabel, note in (  # (statistic, title, xlabel, reading note)
+        (
+            frame.apply(lambda column: column.autocorr(1)),
+            "Stability of Quarterly CPI Measures",
+            "Correlation of quarterly growth with the previous quarter's",
+            "Higher is better. ",
+        ),
+        (
+            frame.diff().std(),
+            "Volatility of Quarterly CPI Measures",
+            "Std. dev. of the change in quarterly growth (percentage points)",
+            "Lower is better. ",
+        ),
+        (
+            errors.mean(),
+            "Mean Absolute Error from Trend: Quarterly CPI Measures",
+            "Mean absolute gap between quarterly growth and its trend (ppts)",
+            TREND_NOTE + "Lower is better. ",
+        ),
+        (
+            errors.std(),
+            "Spread of Absolute Errors from Trend: Quarterly CPI Measures",
+            "Std. dev. of absolute gaps between quarterly growth and its trend",
+            TREND_NOTE + "Lower is better. ",
+        ),
+    ):
         bar_plot_finalise(
             statistic.sort_values(),
             horizontal=True,
@@ -397,10 +389,12 @@ def quarterly_bias(release: AbsRelease) -> None:
 def level_bias(release: AbsRelease) -> None:
     """Price levels cumulated from the underlying measures' quarterly growth, relative to headline."""
     frame = _quarterly_growth(release)
+    levels = (1 + frame / 100).cumprod()
     line_plot_finalise(
-        _level_relative(frame),
+        levels[list(UNDERLYING)].div(levels[BIAS_BASE], axis=0) * HEADLINE_LEVEL,
         title="Underlying CPI Price Levels Relative to Headline",
         ylabel=f"Index ({BIAS_BASE} = {HEADLINE_LEVEL})",
+        annotate=True,
         rounding=1,
         axhline={"y": HEADLINE_LEVEL, "color": "black", "linestyle": "--", "linewidth": 0.75},
         legend={"loc": "best", "fontsize": "x-small"},

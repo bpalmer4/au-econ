@@ -58,7 +58,7 @@ def quarterly_inflation() -> pd.Series:
     """Return annualised quarterly trimmed mean inflation (SA)."""
     trimmed, _, _ = get_cpi("trimmed")
     quarterly = trimmed.pct_change(fill_method=None).dropna()
-    inflation = ((1 + quarterly) ** QUARTERS_PER_YEAR - 1) * PERCENT
+    inflation = ra.annualise_rates(quarterly, periods_per_year=QUARTERS_PER_YEAR)
     if inflation.empty:
         raise ValueError("No inflation data returned")
     return inflation
@@ -89,26 +89,13 @@ def monthly_inflation_tail() -> pd.Series:
     when no month is beyond the last published quarter.
     """
     rolling = _monthly_trimmed_index().rolling(MONTHS_PER_QUARTER).mean()
-    growth = (rolling / rolling.shift(MONTHS_PER_QUARTER)) ** QUARTERS_PER_YEAR
-    inflation = ((growth - 1) * PERCENT).dropna()
+    inflation = ra.annualise_percentages(
+        ra.percent_change(rolling, MONTHS_PER_QUARTER), periods_per_year=QUARTERS_PER_YEAR
+    ).dropna()
     index = inflation.index
     if not isinstance(index, pd.PeriodIndex):
         raise TypeError("Expected a monthly PeriodIndex")
     return inflation[index.asfreq(QUARTERLY) > quarterly_inflation().index[-1]]
-
-
-def _step_label(step: int, *, high: bool) -> str:
-    """Return the legend label for one shading step, e.g. 'Inflation 3-4%'."""
-    edges = (0.0, *SHADE_STEPS)
-    near = edges[step]
-    far = edges[step + 1] if step + 1 < len(edges) else None
-    if high:
-        low_edge = INFLATION_HIGH + near
-        return f"Inflation {low_edge:g}%+" if far is None else f"Inflation {low_edge:g}-{INFLATION_HIGH + far:g}%"
-    high_edge = INFLATION_LOW - near
-    return (
-        f"Inflation below {high_edge:g}%" if far is None else f"Inflation {INFLATION_LOW - far:g}-{high_edge:g}%"
-    )
 
 
 def _span_style(step: int, *, high: bool) -> dict[str, Any]:
@@ -132,10 +119,28 @@ def inflation_backplane(index: pd.PeriodIndex, ax: Axes | None = None) -> Axes:
     if ax is None:
         _, ax = plt.subplots(figsize=get_setting("figsize"))
 
+    # zero-width spans that carry the legend labels, e.g. 'Inflation 3-4%'
     first = index[0].ordinal
+    edges = (0.0, *SHADE_STEPS)
     for high in (True, False):
         for step in range(len(SHADE_ALPHAS)):
-            ax.axvspan(first, first, label=_step_label(step, high=high), **_span_style(step, high=high))
+            near = edges[step]
+            far = edges[step + 1] if step + 1 < len(edges) else None
+            if high:
+                low_edge = INFLATION_HIGH + near
+                label = (
+                    f"Inflation {low_edge:g}%+"
+                    if far is None
+                    else f"Inflation {low_edge:g}-{INFLATION_HIGH + far:g}%"
+                )
+            else:
+                high_edge = INFLATION_LOW - near
+                label = (
+                    f"Inflation below {high_edge:g}%"
+                    if far is None
+                    else f"Inflation {INFLATION_LOW - far:g}-{high_edge:g}%"
+                )
+            ax.axvspan(first, first, label=label, **_span_style(step, high=high))
 
     quarterly = quarterly_inflation().reindex(index.asfreq(QUARTERLY))
     inflation = pd.Series(quarterly.to_numpy(), index=index)

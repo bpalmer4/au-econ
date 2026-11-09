@@ -225,29 +225,6 @@ def _adjusted_note(data: PolicyRates) -> str:
     return f"Adjusted for BIS lags: {'; '.join(data.adjusted)}." if data.adjusted else ""
 
 
-def _rates_chart(dataset: pd.DataFrame, tag: str, note: str) -> None:
-    """Daily rates since DAILY_START for a group of countries, Australia drawn wider."""
-    widths = [LINE_WIDTH] * MAX_LINES
-    if "Australia" in dataset.columns:
-        widths[list(dataset.columns).index("Australia")] = AUSTRALIA_WIDTH
-    count = len(dataset.columns)
-    font_size = 10 if count < FEW_LINES else 8 if count < SOME_LINES else 6
-    line_plot_finalise(
-        dataset[dataset.index >= pd.Period(DAILY_START, freq="D")],
-        title="Central Bank Policy Rates",
-        ylabel="Annual Policy Rate (%)",
-        rfooter=SOURCE,
-        lfooter=LFOOTER,
-        width=widths,
-        style=STYLES * (MAX_LINES // len(STYLES)),
-        legend={"ncols": 3, "loc": "upper left", "fontsize": font_size},
-        y0=True,
-        zero_y=True,
-        tag=tag,
-        rheader=note,
-    )
-
-
 def _available(frame: pd.DataFrame, wanted: list[str]) -> list[str]:
     """Those of wanted that are columns of frame, in order (BIS coverage varies)."""
     return [column for column in wanted if column in frame.columns]
@@ -264,7 +241,26 @@ def daily_rate_groups(data: PolicyRates) -> None:
         "high-inflation": HIGH_INFLATION,
     }
     for tag, group in groups.items():
-        _rates_chart(daily[group], tag, _adjusted_note(data))
+        dataset = daily[group]
+        widths = [LINE_WIDTH] * MAX_LINES  # Australia drawn wider
+        if "Australia" in dataset.columns:
+            widths[list(dataset.columns).index("Australia")] = AUSTRALIA_WIDTH
+        count = len(dataset.columns)
+        font_size = 10 if count < FEW_LINES else 8 if count < SOME_LINES else 6
+        line_plot_finalise(
+            dataset[dataset.index >= pd.Period(DAILY_START, freq="D")],
+            title="Central Bank Policy Rates",
+            ylabel="Annual Policy Rate (%)",
+            rfooter=SOURCE,
+            lfooter=LFOOTER,
+            width=widths,
+            style=STYLES * (MAX_LINES // len(STYLES)),
+            legend={"ncols": 3, "loc": "upper left", "fontsize": font_size},
+            y0=True,
+            zero_y=True,
+            tag=tag,
+            rheader=_adjusted_note(data),
+        )
 
 
 def daily_world(data: PolicyRates) -> None:

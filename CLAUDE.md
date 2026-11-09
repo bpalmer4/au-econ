@@ -96,7 +96,11 @@ Fixed section order, marked by comments: docstring, `# --- dependencies`,
   (`plot_times`, `quarterly_plot_times`, `monthly_plot_times`) stay lowercase.
 - **No duplicate code**: two functions that differ only in their series and title are one
   function with arguments; logic used by two modules moves to `series/` or `charting/`.
-- **Small private helpers** (leading underscore) sit above the chart functions that use them.
+- **Private helpers** (leading underscore): a private helper exists for one of three reasons:
+  (1) it is called from at least two places; (2) it breaks an extra-large function into
+  reasonably sized named steps (never a one-line step); or (3) it carries a decorator that needs a function, such as the
+  `@functools.cache` behind a cached getter. Otherwise write the code inline. Helpers sit
+  above the chart functions that use them.
 - **Cached getters**: a `series/` getter caches a private `@functools.cache` function and
   returns a copy, so a caller cannot corrupt the cache.
 - **Diagnostic prints** that report data state to the reader (splice reports, recency,

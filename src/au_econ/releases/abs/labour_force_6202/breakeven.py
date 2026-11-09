@@ -265,7 +265,7 @@ def breakeven(release: AbsRelease) -> None:
         frame,
         title="Employment growth vs breakeven jobs growth",
         lfooter="Australia. Jobs: seas adj. " + BE_FORMULA,
-        rheader=f"Breakeven: {frame.iloc[-1, 1]:.0f}k/mth;  "
+        rheader=f"Breakeven: {frame['Breakeven jobs growth'].iloc[-1]:.0f}k/mth;  "
         f"{RECENT_AVERAGE}m avg jobs growth: {frame.iloc[-RECENT_AVERAGE:, 0].mean():.0f}k/mth",
         source=release.source,
     )
@@ -278,7 +278,8 @@ def breakeven(release: AbsRelease) -> None:
         frame,
         title="Trend employment growth vs breakeven jobs growth",
         lfooter="Australia. Jobs: trend. " + BE_FORMULA,
-        rheader=f"Breakeven: {frame.iloc[-1, 1]:.0f}k/mth;  trend jobs growth: {frame.iloc[-1, 0]:.0f}k/mth",
+        rheader=f"Breakeven: {frame['Breakeven jobs growth'].iloc[-1]:.0f}k/mth;  "
+        f"trend jobs growth: {frame['Monthly change in employment (trend)'].iloc[-1]:.0f}k/mth",
         source=release.source,
     )
 
@@ -298,8 +299,8 @@ def breakeven(release: AbsRelease) -> None:
             rfooter=release.source,
             lfooter="Australia. Jobs: trend. " + BE_FORMULA,
             lheader=BE_DEFINITION,
-            rheader=f"Trend jobs growth: {trend_frame.iloc[-1, 0]:.0f}k/mth;  "
-            f"breakeven: {trend_frame.iloc[-1, 1]:.0f}k/mth",
+            rheader=f"Trend jobs growth: {trend_frame['Trend jobs growth'].iloc[-1]:.0f}k/mth;  "
+            f"breakeven: {trend_frame['Breakeven jobs growth'].iloc[-1]:.0f}k/mth",
             legend=BE_LEGEND,
             y0=True,
             pre_tag=BE_PRE_TAG,
@@ -348,8 +349,8 @@ def breakeven(release: AbsRelease) -> None:
             rfooter=release.source,
             lfooter="Australia. " + BE_FORMULA,
             lheader=BE_DEFINITION,
-            rheader=f"Civ pop 15+ growth: {pop_frame.iloc[-1, 0]:.0f}k/mth;  "
-            f"breakeven: {pop_frame.iloc[-1, 1]:.0f}k/mth",
+            rheader=f"Civ pop 15+ growth: {pop_frame['Smoothed civ. pop. 15+ growth'].iloc[-1]:.0f}k/mth;  "
+            f"breakeven: {pop_frame['Breakeven jobs growth'].iloc[-1]:.0f}k/mth",
             legend=BE_LEGEND,
             y0=True,
             pre_tag=BE_PRE_TAG,

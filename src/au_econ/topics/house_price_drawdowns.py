@@ -46,20 +46,6 @@ def fetch() -> HousePrices:
 
 
 # --- helpers
-def _next_recovery(series: pd.Series, start: int) -> int:
-    """Return the first position after start where the series regains its level there (len(series) if never)."""
-    peak = series.iloc[start]
-    position = start + 1
-    while position < len(series) and series.iloc[position] < peak:
-        position += 1
-    return position
-
-
-def _episode_label(peak: pd.Period, trough: pd.Period) -> str:
-    """Label an episode by the years it spans, e.g. 1989-96."""
-    return f"{peak.year}-{trough.year % YEAR_DIGITS:02d}"
-
-
 def drawdown_episodes(series: pd.Series, min_decline: float = MIN_DECLINE) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (paths, summary) for every peak-to-trough decline of at least min_decline per cent.
 
@@ -74,7 +60,10 @@ def drawdown_episodes(series: pd.Series, min_decline: float = MIN_DECLINE) -> tu
     rows: list[dict[str, object]] = []
     position = 0
     while position < len(series):
-        recovery = _next_recovery(series, position)
+        # the first position after this one where the series regains its level here
+        recovery = position + 1
+        while recovery < len(series) and series.iloc[recovery] < series.iloc[position]:
+            recovery += 1
         leg = series.iloc[position:recovery]
         trough_offset = int(leg.to_numpy().argmin())
         decline = (leg.iloc[trough_offset] / series.iloc[position] - 1) * PERCENT
@@ -83,7 +72,7 @@ def drawdown_episodes(series: pd.Series, min_decline: float = MIN_DECLINE) -> tu
             trough = leg.index[trough_offset]
             if not isinstance(trough, pd.Period):
                 raise TypeError("Expected a Period")
-            label = _episode_label(index[position], trough)
+            label = f"{index[position].year}-{trough.year % YEAR_DIGITS:02d}"  # the years it spans, e.g. 1989-96
             paths[label] = pd.Series(path.to_numpy(), index=range(len(path)))
             rows.append(
                 {

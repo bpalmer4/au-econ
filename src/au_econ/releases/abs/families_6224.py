@@ -42,36 +42,29 @@ class FamilyData:
     source: str
 
 
-def _data_sheet(table: str) -> pd.DataFrame:
-    """Fetch one cube and return its data sheet below the header row, months parsed, columns by position."""
-    sheets = ra.grab_abs_url(url=LATEST, single_excel_only=table, verbose=False)
-    key = f"{table}---{SHEETS[table]}"
-    if key not in sheets:
-        raise ValueError(f"ABS {CATALOGUE} {table}: no sheet {SHEETS[table]!r}")
-    raw = sheets[key]
-    header = raw.index[raw.iloc[:, 0].astype(str) == HEADER_MARKER]
-    if len(header) == 0:
-        raise ValueError(f"ABS {CATALOGUE} {table}: no header row starting {HEADER_MARKER!r}")
-    body = raw.loc[header[0] + 1 :].reset_index(drop=True)
-    body.columns = pd.RangeIndex(body.shape[1])
-    body[0] = pd.to_datetime(body[0], errors="coerce")
-    body = body.dropna(subset=[0])
-    if body.empty:
-        raise ValueError(f"ABS {CATALOGUE} {table}: no data rows")
-    return body
-
-
 def fetch() -> FamilyData:
-    """Fetch the three cubes."""
-    return FamilyData(sheets={table: _data_sheet(table) for table in SHEETS}, source=f"ABS: {CATALOGUE}")
+    """Fetch the three cubes: each data sheet below its header row, months parsed, columns by position."""
+    bodies: dict[str, pd.DataFrame] = {}
+    for table, sheet in SHEETS.items():
+        sheets = ra.grab_abs_url(url=LATEST, single_excel_only=table, verbose=False)
+        key = f"{table}---{sheet}"
+        if key not in sheets:
+            raise ValueError(f"ABS {CATALOGUE} {table}: no sheet {sheet!r}")
+        raw = sheets[key]
+        header = raw.index[raw.iloc[:, 0].astype(str) == HEADER_MARKER]
+        if len(header) == 0:
+            raise ValueError(f"ABS {CATALOGUE} {table}: no header row starting {HEADER_MARKER!r}")
+        body = raw.loc[header[0] + 1 :].reset_index(drop=True)
+        body.columns = pd.RangeIndex(body.shape[1])
+        body[0] = pd.to_datetime(body[0], errors="coerce")
+        body = body.dropna(subset=[0])
+        if body.empty:
+            raise ValueError(f"ABS {CATALOGUE} {table}: no data rows")
+        bodies[table] = body
+    return FamilyData(sheets=bodies, source=f"ABS: {CATALOGUE}")
 
 
 # --- helpers
-def _strip(column: pd.Series) -> pd.Series:
-    """Labels carry leading spaces for nesting; strip them before filtering."""
-    return column.astype(str).str.strip()
-
-
 def _annual(frame: pd.DataFrame, value: int, *, keys: dict[int, str]) -> pd.Series:
     """Select rows matching keys (column position: label), take one value column, average to years.
 
@@ -79,7 +72,7 @@ def _annual(frame: pd.DataFrame, value: int, *, keys: dict[int, str]) -> pd.Seri
     """
     rows = frame
     for position, label in keys.items():
-        rows = rows[_strip(rows[position]) == label]
+        rows = rows[rows[position].astype(str).str.strip() == label]  # labels are indented with spaces
     series = pd.to_numeric(rows.set_index(0)[value], errors="coerce")
     months = series.index
     if not isinstance(months, pd.DatetimeIndex):

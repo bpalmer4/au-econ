@@ -83,11 +83,6 @@ def used_often(data: dict[str, pd.DataFrame], meta: pd.DataFrame) -> dict[str, t
     }
 
 
-def year_ended_growth(series: pd.Series) -> pd.Series:
-    """Return year-ended percentage growth of a quarterly series."""
-    return (series / series.shift(QUARTERS_PER_YEAR) - 1) * PERCENT
-
-
 def is_quarter_end(index: pd.Index) -> np.ndarray:
     """Return True for the months of a monthly PeriodIndex that close a quarter."""
     if not isinstance(index, pd.PeriodIndex):
@@ -155,18 +150,6 @@ def _op8_hours() -> pd.Series:
     return pd.Series(hours[keep].to_numpy(), index=index, name="Aggregate weekly hours")
 
 
-def _derived_productivity() -> pd.Series:
-    """Return real GDP per aggregate weekly hour, the August hours interpolated to quarters (arbitrary scale)."""
-    gdp, _units = get_gdp("CVM", "SA")
-    hours = _op8_hours()
-    quarters = pd.period_range(hours.index[0], hours.index[-1], freq="Q")
-    gapped = hours.reindex(quarters)
-    gapped.index = quarters.to_timestamp()
-    filled = gapped.interpolate(method="cubic")
-    filled.index = quarters
-    return (gdp / filled).dropna().rename("Derived productivity")
-
-
 @cache
 def _productivity_index() -> tuple[pd.Series, pd.DataFrame]:
     """Splice the published GDP per hour worked index over the derived series (cached; not for mutation)."""
@@ -174,7 +157,16 @@ def _productivity_index() -> tuple[pd.Series, pd.DataFrame]:
     published = ra.select_one(
         data, meta, {KEY_AGGS: mc.table, "GDP per hour worked: Index ;": mc.did, SA: mc.stype}
     ).dropna()
-    spliced, report = ra.splice([published, _derived_productivity()], rebase=True)
+    # real GDP per aggregate weekly hour, the August hours interpolated to quarters (arbitrary scale)
+    gdp, _units = get_gdp("CVM", "SA")
+    hours = _op8_hours()
+    quarters = pd.period_range(hours.index[0], hours.index[-1], freq="Q")
+    gapped = hours.reindex(quarters)
+    gapped.index = quarters.to_timestamp()
+    filled = gapped.interpolate(method="cubic")
+    filled.index = quarters
+    derived = (gdp / filled).dropna().rename("Derived productivity")
+    spliced, report = ra.splice([published, derived], rebase=True)
     return spliced.rename("GDP per hour worked"), report
 
 

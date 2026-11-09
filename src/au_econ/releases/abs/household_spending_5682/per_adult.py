@@ -60,17 +60,6 @@ QUARTERLY_LFOOTER = f"{SA_LFOOTER}Chain volume measures. {ADULTS}"
 
 
 # --- data
-def _nominal_spending(spending: HouseholdSpending) -> pd.Series:
-    """Return monthly household spending, current prices, SA ($ Millions)."""
-    release = spending.release
-    selector = {SPEND_TABLE: mc.table, SPEND_DID: mc.did, SA: mc.stype}
-    table, series_id, _units = ra.find_abs_id(release.meta, selector, verbose=False)
-    series = release.data[table][series_id].dropna()
-    if series.empty:
-        raise ValueError("No monthly household spending data")
-    return series
-
-
 def _deflator() -> pd.Series:
     """Return the monthly SA headline CPI with its latest month = 100."""
     cpi, _units, _stype = get_monthly_cpi()
@@ -82,62 +71,29 @@ def _adults() -> pd.Series:
     return adults
 
 
-def _hfce() -> pd.Series:
-    """Return quarterly Household Final Consumption Expenditure, CVM, SA ($ Millions)."""
-    data, meta = get_table(HFCE_TABLE)
-    selector = {HFCE_TABLE: mc.table, HFCE_DID: mc.did, SA: mc.stype, "$ Millions": mc.unit}
-    series = ra.select_one(data, meta, selector).dropna()
-    if series.empty:
-        raise ValueError("No household final consumption expenditure data")
-    return series
-
-
 def _real_spending_per_adult(spending: HouseholdSpending) -> pd.Series:
     """Return monthly real household spending per adult ($, latest-CPI-month prices)."""
-    real = _nominal_spending(spending) / _deflator() * INDEX_BASE
+    # monthly household spending, current prices, SA ($ Millions)
+    release = spending.release
+    selector = {SPEND_TABLE: mc.table, SPEND_DID: mc.did, SA: mc.stype}
+    table, series_id, _units = ra.find_abs_id(release.meta, selector, verbose=False)
+    nominal = release.data[table][series_id].dropna()
+    if nominal.empty:
+        raise ValueError("No monthly household spending data")
+    real = nominal / _deflator() * INDEX_BASE
     return (real / _adults() * MILLION_PER_THOUSAND).dropna()
 
 
 def _hfce_per_adult() -> pd.Series:
     """Return quarterly HFCE (CVM) per adult ($ per quarter)."""
+    # quarterly Household Final Consumption Expenditure, CVM, SA ($ Millions)
+    data, meta = get_table(HFCE_TABLE)
+    selector = {HFCE_TABLE: mc.table, HFCE_DID: mc.did, SA: mc.stype, "$ Millions": mc.unit}
+    hfce = ra.select_one(data, meta, selector).dropna()
+    if hfce.empty:
+        raise ValueError("No household final consumption expenditure data")
     adults = ra.monthly_to_qtly(_adults(), f="mean")
-    return (_hfce() / adults * MILLION_PER_THOUSAND).dropna()
-
-
-def _benchmark_gap(spending: HouseholdSpending) -> pd.Series:
-    """Return the financial-year gap (%) between the indicator and HFCE, over matched categories.
-
-    Both sides are Original, current prices, summed over CATEGORY_MATCH and over complete
-    financial years (indexed by the year ending June). Zero means the indicator is benchmarked.
-    """
-    release = spending.release
-    spend_selector = {SPEND_CATEGORY_TABLE: mc.table, ORIGINAL: mc.stype, MONTH: mc.freq}
-    spend_total = sum(
-        ra.select_one(
-            release.data,
-            release.meta,
-            spend_selector | {f"Household spending ;  {category} ;  Australia ;  Current Price ;": mc.did},
-        )
-        for category in CATEGORY_MATCH
-    )
-    data, purpose_meta = get_table(HFCE_PURPOSE_TABLE)
-    hfce_selector = {HFCE_PURPOSE_TABLE: mc.table, ORIGINAL: mc.stype, "$ Millions": mc.unit}
-    hfce = sum(
-        ra.select_one(data, purpose_meta, hfce_selector | {f"{purpose}: Current prices ;": mc.did})
-        for purposes in CATEGORY_MATCH.values()
-        for purpose in purposes
-    )
-    if not isinstance(spend_total, pd.Series) or not isinstance(hfce, pd.Series):
-        raise TypeError("Expected Series for the matched-category totals")
-    quarters = pd.DataFrame({"spending": ra.monthly_to_qtly(spend_total, f="sum"), "hfce": hfce}).dropna()
-    if not isinstance(quarters.index, pd.PeriodIndex):
-        raise TypeError("Expected a PeriodIndex on the quarterly totals")
-    financial_year = quarters.index.asfreq("Q-JUN").qyear
-    totals = quarters.groupby(financial_year).sum()
-    totals = totals[quarters.groupby(financial_year).size() == QUARTERS_PER_YEAR]
-    if totals.empty:
-        raise ValueError("No complete financial years for the benchmark check")
-    return (totals["spending"] / totals["hfce"] - 1) * PERCENT
+    return (hfce / adults * MILLION_PER_THOUSAND).dropna()
 
 
 # --- charts
@@ -207,7 +163,7 @@ def cross_check(spending: HouseholdSpending) -> None:
             "Household consumption (National Accounts), chain volume": _hfce_per_adult(),
         }
     )
-    growth = ((levels / levels.shift(QUARTERS_PER_YEAR) - 1) * PERCENT).dropna()
+    growth = ra.percent_change(levels, QUARTERS_PER_YEAR).dropna()
     multi_start(
         growth,
         function=line_plot_finalise,
@@ -223,9 +179,40 @@ def cross_check(spending: HouseholdSpending) -> None:
 
 
 def benchmark_gap(spending: HouseholdSpending) -> None:
-    """Chart the financial-year gap between the indicator and HFCE (zero = benchmarked)."""
+    """Chart the financial-year gap between the indicator and HFCE (zero = benchmarked).
+
+    Both sides are Original, current prices, summed over CATEGORY_MATCH and over complete
+    financial years (indexed by the year ending June).
+    """
+    release = spending.release
+    spend_selector = {SPEND_CATEGORY_TABLE: mc.table, ORIGINAL: mc.stype, MONTH: mc.freq}
+    spend_total = sum(
+        ra.select_one(
+            release.data,
+            release.meta,
+            spend_selector | {f"Household spending ;  {category} ;  Australia ;  Current Price ;": mc.did},
+        )
+        for category in CATEGORY_MATCH
+    )
+    data, purpose_meta = get_table(HFCE_PURPOSE_TABLE)
+    hfce_selector = {HFCE_PURPOSE_TABLE: mc.table, ORIGINAL: mc.stype, "$ Millions": mc.unit}
+    hfce = sum(
+        ra.select_one(data, purpose_meta, hfce_selector | {f"{purpose}: Current prices ;": mc.did})
+        for purposes in CATEGORY_MATCH.values()
+        for purpose in purposes
+    )
+    if not isinstance(spend_total, pd.Series) or not isinstance(hfce, pd.Series):
+        raise TypeError("Expected Series for the matched-category totals")
+    quarters = pd.DataFrame({"spending": ra.monthly_to_qtly(spend_total, f="sum"), "hfce": hfce}).dropna()
+    if not isinstance(quarters.index, pd.PeriodIndex):
+        raise TypeError("Expected a PeriodIndex on the quarterly totals")
+    financial_year = quarters.index.asfreq("Q-JUN").qyear
+    totals = quarters.groupby(financial_year).sum()
+    totals = totals[quarters.groupby(financial_year).size() == QUARTERS_PER_YEAR]
+    if totals.empty:
+        raise ValueError("No complete financial years for the benchmark check")
     bar_plot_finalise(
-        _benchmark_gap(spending),
+        (totals["spending"] / totals["hfce"] - 1) * PERCENT,
         title="Household Spending Indicator vs HFCE: benchmark gap",
         xlabel="Financial year ending June",
         ylabel="Per cent",

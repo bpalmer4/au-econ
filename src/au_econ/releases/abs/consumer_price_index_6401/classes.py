@@ -70,17 +70,13 @@ QUARTERLY_LFOOTER = "Australia. Quarterly CPI series. "
 
 
 # --- helpers
-def _class_name(did: str) -> str:
-    """Return the expenditure item name from an 'Index Numbers ;  <name> ;  Australia ;' description."""
-    return did.replace("Index Numbers ;", "").replace(";  Australia ;", "").strip().rstrip(";").strip()
-
-
 def _index_series(release: AbsRelease, table: str) -> dict[str, pd.Series]:
     """Return every Australian index series in a table, keyed by expenditure item name."""
     rows = ra.search_abs_meta(release.meta, {table: mc.table, INDEX_DID: mc.did, AUSTRALIA_DID: mc.did})
     found: dict[str, pd.Series] = {}
     for did, series_id in zip(rows[mc.did], rows[mc.id], strict=True):
-        name = _class_name(did)
+        # 'Index Numbers ;  <name> ;  Australia ;' -> '<name>'
+        name = did.replace("Index Numbers ;", "").replace(";  Australia ;", "").strip().rstrip(";").strip()
         if name and series_id in release.data[table].columns:
             found[name] = release.data[table][series_id]
     return found
@@ -121,14 +117,7 @@ def _level_growth(release: AbsRelease, level: str, mode: str) -> pd.DataFrame | 
         return (data / data.iloc[position] - 1) * 100
     if not lag or data.index[-1] - lag not in data.index:
         return None
-    return (data / data.shift(lag) - 1) * 100
-
-
-def _infrequent(data: pd.DataFrame) -> set[str]:
-    """Return classes whose index barely moves within the year (many zero quarterly changes)."""
-    recent = data.iloc[-INFREQUENT_LOOKBACK:]
-    zero_counts = (recent.abs() < NEAR_ZERO).sum(axis=0)
-    return set(zero_counts[zero_counts >= INFREQUENT_ZEROS].index)
+    return ra.percent_change(data, lag)
 
 
 def _growth_bars_at(release: AbsRelease, level: str, top_keep: int | None) -> None:
@@ -138,7 +127,10 @@ def _growth_bars_at(release: AbsRelease, level: str, top_keep: int | None) -> No
         data = _level_growth(release, level, mode)
         if data is None or data.empty:
             continue
-        infrequent = _infrequent(data) if mode == "quarterly" and level == "class" else set()
+        infrequent: set[str] = set()
+        if mode == "quarterly" and level == "class":  # classes whose index barely moves within the year
+            zero_counts = (data.iloc[-INFREQUENT_LOOKBACK:].abs() < NEAR_ZERO).sum(axis=0)
+            infrequent = set(zero_counts[zero_counts >= INFREQUENT_ZEROS].index)
         latest = data.iloc[-1].dropna().sort_values(ascending=True)
         if latest.empty:
             continue
@@ -275,8 +267,8 @@ def breadth(release: AbsRelease) -> None:
     index = _level_index(release, "class", QUARTERLY_TABLE)
     quarterly_pct = (((BREADTH_ANNUAL_PCT / 100) + 1) ** (1 / QUARTERS_PER_YEAR) - 1) * 100
     measures = (
-        ("annual", (index / index.shift(QUARTERS_PER_YEAR) - 1) * 100, BREADTH_ANNUAL_PCT, 1),
-        ("quarterly", (index / index.shift(1) - 1) * 100, quarterly_pct, 3),
+        ("annual", ra.percent_change(index, QUARTERS_PER_YEAR), BREADTH_ANNUAL_PCT, 1),
+        ("quarterly", ra.percent_change(index, 1), quarterly_pct, 3),
     )
     with mg.chart_subdir(SUMMARY_SUBDIR):
         for modality, data, threshold, decimals in measures:
@@ -359,9 +351,9 @@ def residential(release: AbsRelease) -> None:
     """Annual growth in rents and new dwelling prices, and their gap to the All Groups CPI."""
     items = _quarterly_items(release)
     residential_index = items[[RENTS, NEW_DWELLINGS]].dropna(how="all")
-    growth = (residential_index / residential_index.shift(QUARTERS_PER_YEAR) - 1) * 100
+    growth = ra.percent_change(residential_index, QUARTERS_PER_YEAR)
     all_groups = items[ALL_GROUPS].dropna()
-    gap = growth.sub((all_groups / all_groups.shift(QUARTERS_PER_YEAR) - 1) * 100, axis=0)
+    gap = growth.sub(ra.percent_change(all_groups, QUARTERS_PER_YEAR), axis=0)
     charts = (
         (growth, "CPI: Rents and New Dwelling Purchase by Owner-Occupiers", "Per cent per year"),
         (gap, "Residential Costs Above/Below All Groups CPI Inflation", "Annual percentage points"),

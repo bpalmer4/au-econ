@@ -37,22 +37,18 @@ def _resource_url(package: str, name: str) -> str:
     return urls[0]
 
 
-def _cached(package: str, error: Exception) -> bytes:
-    """Return the cached copy of a package's file after a failed catalogue lookup, saying so."""
-    cached = sorted(paths.CACHE_DIR.glob(f"{PREFIX}-{package}--*.csv"), key=lambda file: file.stat().st_mtime)
-    if not cached:
-        raise RuntimeError(f"data.gov.au unreachable and no cached {package} file") from error
-    print(f"WARNING: could not check data.gov.au ({type(error).__name__}); using cached {cached[-1].name}")
-    return cached[-1].read_bytes()
-
-
 def get_csv(dataset: tuple[str, str]) -> pd.DataFrame:
     """Return one AFSA CSV file (MONTHLY or QUARTERLY) as a frame."""
     package, name = dataset
     try:
         url = _resource_url(package, name)
     except (requests.RequestException, KeyError, ValueError) as error:
-        content = _cached(package, error)
+        # the cached copy, saying so
+        cached = sorted(paths.CACHE_DIR.glob(f"{PREFIX}-{package}--*.csv"), key=lambda file: file.stat().st_mtime)
+        if not cached:
+            raise RuntimeError(f"data.gov.au unreachable and no cached {package} file") from error
+        print(f"WARNING: could not check data.gov.au ({type(error).__name__}); using cached {cached[-1].name}")
+        content = cached[-1].read_bytes()
     else:
         content = get_file(url, prefix=f"{PREFIX}-{package}", timeout=DOWNLOAD_TIMEOUT, fallback=True)
     return pd.read_csv(io.BytesIO(content))

@@ -438,17 +438,6 @@ def population_growth_proxy(_data: PopulationData) -> None:
     )
 
 
-def _runs(periods: pd.PeriodIndex) -> list[tuple[pd.Period, pd.Period]]:
-    """Group sorted periods into runs of consecutive periods: (first, last) for each run."""
-    runs: list[tuple[pd.Period, pd.Period]] = []
-    for period in periods:
-        if runs and period == runs[-1][1] + 1:
-            runs[-1] = (runs[-1][0], period)
-        else:
-            runs.append((period, period))
-    return runs
-
-
 def civ15_migration_share(_data: PopulationData) -> None:
     """Chart the share of civilian population 15+ annual growth attributable to migration, two ways.
 
@@ -469,9 +458,13 @@ def civ15_migration_share(_data: PopulationData) -> None:
     if not isinstance(negative_index, pd.PeriodIndex):
         raise TypeError("Expected a quarterly PeriodIndex for the civ15 migration share")
     share[negative] = float("nan")
-    spans = [
-        {"xmin": first, "xmax": last, "color": "mistyrose", "alpha": 0.6} for first, last in _runs(negative_index)
-    ]
+    runs: list[tuple[pd.Period, pd.Period]] = []  # (first, last) of each run of consecutive quarters
+    for period in negative_index:
+        if runs and period == runs[-1][1] + 1:
+            runs[-1] = (runs[-1][0], period)
+        else:
+            runs.append((period, period))
+    spans = [{"xmin": first, "xmax": last, "color": "mistyrose", "alpha": 0.6} for first, last in runs]
     multi_start(
         share,
         function=line_plot_finalise,

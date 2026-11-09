@@ -46,18 +46,6 @@ MEDIAN_GAP_LIMITS = (("D", 7), ("M", 35), ("Q", 100))
 
 
 # --- data
-def _frequency(dates: pd.DatetimeIndex) -> str:
-    """Return the PeriodIndex frequency of a series' dates (daily, monthly, quarterly or annual)."""
-    inferred = pd.infer_freq(dates)
-    for freq, aliases in INFERRED_FREQUENCIES.items():
-        if inferred in aliases:
-            return freq
-    if inferred is not None:
-        return inferred
-    median_gap = pd.Series(dates).diff().dt.days.dropna().median()
-    return next((freq for freq, limit in MEDIAN_GAP_LIMITS if median_gap <= limit), "A")
-
-
 def fetch() -> dict[str, pd.Series]:
     """Return each commodity's prices, keyed by chart title, with a PeriodIndex at its native frequency."""
     prices: dict[str, pd.Series] = {}
@@ -67,7 +55,13 @@ def fetch() -> dict[str, pd.Series]:
             raise ValueError(f"FRED {series_id}: only {len(series)} observations from {START}")
         if not isinstance(series.index, pd.DatetimeIndex):
             raise TypeError(f"FRED {series_id}: expected a DatetimeIndex")
-        series.index = pd.PeriodIndex(series.index, freq=_frequency(series.index))
+        # the native frequency (daily, monthly, quarterly or annual), from the dates' spacing if not inferred
+        inferred = pd.infer_freq(series.index)
+        freq = next((f for f, aliases in INFERRED_FREQUENCIES.items() if inferred in aliases), inferred)
+        if freq is None:
+            median_gap = pd.Series(series.index).diff().dt.days.dropna().median()
+            freq = next((f for f, limit in MEDIAN_GAP_LIMITS if median_gap <= limit), "A")
+        series.index = pd.PeriodIndex(series.index, freq=freq)
         prices[title] = series.rename(title)
     return prices
 

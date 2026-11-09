@@ -42,7 +42,7 @@ PER_100K = 100_000
 JUNE_QUARTER = 2
 BASE_YEAR = 2019
 INDEX_START, INDEX_END = 2010, 2025
-YEAR_HEADER_ROW, SEX_HEADER_ROW = 3, 4  # in Causes of Death table 1.2
+YEAR_HEADER = "Registration year"  # the year header row in Causes of Death table 1.2
 NHMP_HEADER, NHMD_HEADER, RCV1_HEADER, RCV6_HEADER = 8, 14, 12, 7
 RCV_RATE = "Victimisation rate (number per 100,000)"
 NHMD_RATE_KEY = "per 100,000 population"
@@ -61,45 +61,45 @@ class ViolenceData:
     rcv6: pd.DataFrame  # RCV 6: all police-recorded sexual assault
 
 
-def _assault_deaths() -> pd.DataFrame:
-    """Assault deaths by year and sex, from Causes of Death table 1.2 (any release year)."""
+def fetch() -> ViolenceData:
+    """Fetch assault deaths, population and the four AIHW workbook sheets."""
+    # assault deaths by year and sex, from Causes of Death table 1.2 (any release year)
     tables = ra.grab_abs_url(url=COD_URL, verbose=False)
     suffix = f"---{COD_SHEET}"
     candidates = [k for k in tables if COD_WORKBOOK in k and k.endswith(suffix)]
     if len(candidates) != 1:
         raise KeyError(f"Expected one sheet matching {COD_WORKBOOK!r} + {COD_SHEET!r}, found {candidates}")
     table = tables[candidates[0]]
-    years = pd.Series(table.iloc[YEAR_HEADER_ROW].tolist()).ffill()  # merged year headers
-    sexes = table.iloc[SEX_HEADER_ROW].tolist()
+    header_rows = np.flatnonzero(table.iloc[:, 0].astype(str).str.startswith(YEAR_HEADER))
+    if len(header_rows) != 1:
+        raise KeyError(f"Expected one {YEAR_HEADER!r} row, found {len(header_rows)}")
+    year_row = int(header_rows[0])
+    years = pd.Series(table.iloc[year_row].tolist()).ffill()  # merged year headers
+    sexes = table.iloc[year_row + 1].tolist()  # the sexes sit under the years
     matches = table.iloc[:, 0].astype(str).str.strip() == ASSAULT_ROW
     if not matches.any():
         raise KeyError(f"Row not found: {ASSAULT_ROW!r}")
     row = table[matches].iloc[0]
-    frame = (
+    assault = (
         pd.DataFrame(
             {sex: {int(years.iloc[c]): row.iloc[c] for c, s in enumerate(sexes) if s == sex} for sex in SEXES}
         )
         .astype(float)
         .sort_index()
     )
-    frame.index = pd.PeriodIndex(frame.index.astype(int), freq="Y")
-    return frame
+    if assault.empty:
+        raise ValueError(f"No assault deaths read from {COD_SHEET}")
+    assault.index = pd.PeriodIndex(assault.index.astype(int), freq="Y")
 
-
-def _mid_year_population() -> pd.Series:
-    """Australian ERP at the June quarter, indexed by year."""
+    # Australian ERP at the June quarter, indexed by year
     erp, _units = get_erp()
     index = erp.index
     if not isinstance(index, pd.PeriodIndex):
         raise TypeError(f"Expected a PeriodIndex, got {type(index).__name__}")
     june = index.quarter == JUNE_QUARTER
-    mid_year = erp[june].copy()
-    mid_year.index = pd.PeriodIndex(index[june].year, freq="Y")
-    return mid_year
+    population = erp[june].copy()
+    population.index = pd.PeriodIndex(index[june].year, freq="Y")
 
-
-def fetch() -> ViolenceData:
-    """Fetch assault deaths, population and the four AIHW workbook sheets."""
     nhmd = get_fdsv_sheet("NHMD 1", NHMD_HEADER)
     nhmd = nhmd[
         (nhmd["Age group"] == "All ages")
@@ -107,8 +107,8 @@ def fetch() -> ViolenceData:
     ].copy()
     nhmd["Value"] = nhmd["Value"].astype(str).str.replace(",", "").astype(float)
     return ViolenceData(
-        assault=_assault_deaths(),
-        population=_mid_year_population(),
+        assault=assault,
+        population=population,
         nhmp=get_fdsv_sheet("NHMP 2", NHMP_HEADER),
         nhmd=nhmd,
         rcv1=get_fdsv_sheet("RCV 1", RCV1_HEADER),
@@ -186,18 +186,6 @@ def _nhmp(data: ViolenceData, homicide_type: str, unit: str) -> pd.DataFrame:
 def _nhmd(data: ViolenceData, unit: str) -> pd.DataFrame:
     frame = data.nhmd.assign(YearEnd=data.nhmd["Year"].apply(_fy_end_year))
     return _annual(frame[frame["Unit"] == unit], "YearEnd", "Sex")
-
-
-def _nhmd_rate_unit(data: ViolenceData) -> str:
-    """Return the NHMD rate's unit label, found by the part common to its names.
-
-    The AIHW renamed it in 2026: "Rate per 100,000 population" became "Number per 100,000
-    population".
-    """
-    labels = [str(u) for u in data.nhmd["Unit"].unique() if NHMD_RATE_KEY in str(u)]
-    if len(labels) != 1:
-        raise ValueError(f"Expected one NHMD unit containing {NHMD_RATE_KEY!r}, found {labels}")
-    return labels[0]
 
 
 def _rcv1(data: ViolenceData, offence: str, unit: str) -> pd.DataFrame:
@@ -326,6 +314,11 @@ def homicide(data: ViolenceData) -> None:
 
 def hospitalisations(data: ViolenceData) -> None:
     """FDV hospitalisations by sex (AIHW NHMD): counts and rates."""
+    # the rate's unit label, found by the part common to its names: the AIHW renamed it in 2026,
+    # "Rate per 100,000 population" becoming "Number per 100,000 population"
+    rate_units = [str(u) for u in data.nhmd["Unit"].unique() if NHMD_RATE_KEY in str(u)]
+    if len(rate_units) != 1:
+        raise ValueError(f"Expected one NHMD unit containing {NHMD_RATE_KEY!r}, found {rate_units}")
     for unit, title, ylabel, note, rounding in (
         (
             "Number",
@@ -335,7 +328,7 @@ def hospitalisations(data: ViolenceData) -> None:
             0,
         ),
         (
-            _nhmd_rate_unit(data),
+            rate_units[0],
             "FDV Hospitalisation Rate by Sex: Australia",
             "Hospitalisations per\n100,000 same-sex population",
             "All ages. Year ending 30 June. Crude rate.",
@@ -430,7 +423,7 @@ def police_recorded(data: ViolenceData) -> None:
 def indexed_comparison(data: ViolenceData) -> None:
     """Hard outcomes against police-reported indicators, each a Persons rate indexed to 2019 = 100.
 
-    NHMD starts in FY2020, so it is indexed to its first year.
+    NHMD starts in 2020-21 (plotted at 2021), so it is indexed to its first year.
     """
 
     def rebase(series: pd.Series) -> pd.Series:
@@ -455,7 +448,7 @@ def indexed_comparison(data: ViolenceData) -> None:
         title="Hard Outcomes vs Police-Reported Indicators: Indexed Comparison",
         ylabel=f"Index of rate per 100,000\n({BASE_YEAR} = 100)",
         rfooter="ABS: 3303.0, 4510.0; AIC: NHMP; AIHW: NHMD",
-        lfooter=LFOOTER + "Persons total. NHMD rebased to FY2020.",
+        lfooter=LFOOTER + "Persons total. NHMD rebased to 2020-21.",
         color=INDEX_COLOURS,
         style=INDEX_STYLES,
         axhline={"y": 100, "color": "grey", "linestyle": ":"},

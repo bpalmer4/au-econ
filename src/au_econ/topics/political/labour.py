@@ -163,20 +163,6 @@ def _average_earnings() -> Series:
     return data[MODELLERS_TABLE][series_id].dropna().rename("AENA")
 
 
-def _wage_series() -> Series:
-    """Splice the WPI over average earnings, linked at the WPI's first quarter (rebase=True).
-
-    The earlier segment is trimmed to the WPI's first quarter so the rebase factor is a
-    single chain-link at the junction rather than a mean ratio across the whole overlap,
-    which would put a spurious step into the Howard term.
-    """
-    wpi = _wpi()
-    earnings = _average_earnings()
-    junction = earnings[earnings.index <= wpi.index[0]]
-    wage, _report = ra.splice([wpi, junction], rebase=True)
-    return wage.rename("Wages")
-
-
 def _cpi_class(name: str) -> Series:
     """Fetch one CPI expenditure class index (Original), taking the first match.
 
@@ -195,11 +181,6 @@ def _cpi_class(name: str) -> Series:
 
 
 # --- helpers
-def _wrap_names(series: Series) -> Series:
-    """Break each epoch name at its hyphens, for bar labels."""
-    return series.rename(index=lambda name: str(name).replace("-", "\n"))
-
-
 def _wage_governments(govts: DataFrame) -> DataFrame:
     """Return the epochs the wage series covers (from Whitlam on)."""
     first = govts.index[FIRST_WAGE_EPOCH]
@@ -237,7 +218,7 @@ def _segment_plot(
 def _bar_plot(values: Series, govts: DataFrame, **kwargs: Unpack[mg.FinaliseKwargs]) -> None:
     """Draw one annotated bar per epoch, coloured by party."""
     mg.bar_plot_finalise(
-        _wrap_names(values),
+        values.rename(index=lambda name: str(name).replace("-", "\n")),  # break epoch names at hyphens
         color=mg.colorise_list(govts["party"]),
         annotate=True,
         rounding=ROUNDING,
@@ -433,7 +414,13 @@ def real_wages_cpi_cagr(govts: DataFrame) -> None:
 
 def wpi_gaps(govts: DataFrame) -> None:
     """Chart wage growth less growth in each CPI class, per term (bars) and across the term (paths)."""
-    wages = _wage_series()
+    # Splice the WPI over average earnings, linked at the WPI's first quarter (rebase=True).
+    # Earnings are trimmed to that quarter so the rebase factor is a single chain-link at the
+    # junction, not a mean ratio across the overlap, which would put a step into the Howard term.
+    wpi = _wpi()
+    earnings = _average_earnings()
+    wages, _report = ra.splice([wpi, earnings[earnings.index <= wpi.index[0]]], rebase=True)
+    wages = wages.rename("Wages")
     print(f"Wages: {wages.index[0]} to {wages.index[-1]}")
     for item_name in WPI_GAP_ITEMS:
         item = _cpi_class(item_name)

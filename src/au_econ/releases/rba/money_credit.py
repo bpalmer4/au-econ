@@ -234,11 +234,6 @@ def _mid_quarter_months(index: pd.Index) -> pd.PeriodIndex:
     return index.asfreq("M", how="END") - 1
 
 
-def _plain_number(value: float, _position: int) -> str:
-    """Format a log-axis tick as a plain number (0.5, 2, 1000), not a power of ten."""
-    return f"{value:g}"
-
-
 def _log_line_charts[DataT: (pd.Series, pd.DataFrame)](
     series: DataT,
     starts: tuple[int, ...],
@@ -258,7 +253,8 @@ def _log_line_charts[DataT: (pd.Series, pd.DataFrame)](
         axes = mg.line_plot(series, plot_from=start, annotate=True)
         axes.set_yscale("log")  # resets the locators, so set ticks after this
         axes.yaxis.set_major_locator(LogLocator(base=10, subs=LOG_TICK_STEPS))
-        axes.yaxis.set_major_formatter(FuncFormatter(_plain_number))
+        # plain numbers (0.5, 2, 1000) on the log axis, not powers of ten
+        axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:g}"))
         axes.yaxis.set_minor_formatter(NullFormatter())
         mg.finalise_plot(
             axes,
@@ -270,14 +266,6 @@ def _log_line_charts[DataT: (pd.Series, pd.DataFrame)](
             tag=f"log-{i}",
             legend=isinstance(series, pd.DataFrame),
         )
-
-
-def _monthly_nominal_gdp(data: MoneyData) -> pd.Series:
-    """Quarterly nominal GDP on a monthly index: each quarter on its middle month, log-linear between."""
-    log_gdp = np.log(data.gdp)
-    log_gdp.index = _mid_quarter_months(data.gdp.index)
-    months = pd.period_range(log_gdp.index[0], log_gdp.index[-1], freq="M")
-    return np.exp(log_gdp.reindex(months).interpolate())
 
 
 def _housing_credit(data: MoneyData) -> tuple[pd.DataFrame, str]:
@@ -519,11 +507,15 @@ def broad_money_counterparts(data: MoneyData) -> None:
 def nominal_gdp_vs_credit(data: MoneyData) -> None:
     """Chart 12-month growth in nominal GDP (interpolated to months) against private credit."""
     credit = _by_title(data, "D1", TOTAL_CREDIT_GROWTH)
-    gdp = _monthly_nominal_gdp(data)
+    # quarterly nominal GDP on a monthly index: each quarter on its middle month, log-linear between
+    log_gdp = np.log(data.gdp)
+    log_gdp.index = _mid_quarter_months(data.gdp.index)
+    months = pd.period_range(log_gdp.index[0], log_gdp.index[-1], freq="M")
+    gdp = np.exp(log_gdp.reindex(months).interpolate())
     gdp_growth = ((gdp / _year_ago(gdp) - 1) * PERCENT).dropna()
 
     # audit: on mid-quarter months the monthly growth must equal the quarterly growth
-    quarterly_growth = (data.gdp / data.gdp.shift(QUARTERS_PER_YEAR) - 1) * PERCENT
+    quarterly_growth = ra.percent_change(data.gdp, QUARTERS_PER_YEAR)
     quarterly_growth.index = _mid_quarter_months(quarterly_growth.index)
     gap = (gdp_growth - quarterly_growth).abs().max()
     print(f"Largest gap between monthly and quarterly GDP growth on mid-quarter months: {gap:.2e} ppt")

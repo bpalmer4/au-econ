@@ -78,14 +78,6 @@ def _coe(release: AbsRelease) -> pd.Series:
     return release.data[INCOME_FROM_GDP][coe_id].dropna()
 
 
-def _household_deflator(release: AbsRelease) -> pd.Series:
-    """Return the household consumption deflator, rebased to 1 in the latest quarter."""
-    meta = release.meta
-    ident = meta[(meta[mc.did] == HFCE_DID) & (meta[mc.table] == DEFLATORS)][mc.id].iloc[0]
-    series = release.data[DEFLATORS][ident]
-    return series / series.iloc[-1]
-
-
 # --- charts
 def ulc_calculated(release: AbsRelease) -> None:
     """Chart unit labour costs calculated as COE over real GDP: level, growth, and against the official index."""
@@ -163,8 +155,8 @@ def ulc_calculated(release: AbsRelease) -> None:
         )
         growth_compare = pd.DataFrame(
             {
-                labels[0]: ulc.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
-                labels[1]: official.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
+                labels[0]: ra.percent_change(ulc, QUARTERS_PER_YEAR),
+                labels[1]: ra.percent_change(official, QUARTERS_PER_YEAR),
             }
         ).dropna()
         line_plot_finalise(
@@ -255,7 +247,7 @@ def hourly_coe(release: AbsRelease) -> None:
             **common,
         )
         line_plot_finalise(
-            (comparison.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna(),
+            ra.percent_change(comparison, QUARTERS_PER_YEAR).dropna(),
             title="Hourly COE Growth (YoY): All sectors vs Non-farm",
             ylabel="Per cent",
             tag="growth-comparison",
@@ -267,7 +259,10 @@ def hourly_coe(release: AbsRelease) -> None:
 
 def real_wages(release: AbsRelease) -> None:
     """Compensation per employee and per hour, deflated by the household consumption deflator."""
-    deflator = _household_deflator(release)
+    meta = release.meta
+    ident = meta[(meta[mc.did] == HFCE_DID) & (meta[mc.table] == DEFLATORS)][mc.id].iloc[0]
+    deflator = release.data[DEFLATORS][ident]
+    deflator = deflator / deflator.iloc[-1]  # rebased to 1 in the latest quarter
     with chart_subdir(SUBDIR):
         for did in REAL_WAGE_DIDS:
             row = _analytical_row(release, did)
@@ -336,8 +331,8 @@ def coe_vs_wpi(release: AbsRelease) -> None:
         )
         growth = pd.DataFrame(
             {
-                "Cost of Employees/Hour (TTY)": (hourly / hourly.shift(QUARTERS_PER_YEAR) - 1).mul(PERCENT),
-                "WPI (TTY)": (wpi / wpi.shift(QUARTERS_PER_YEAR) - 1).mul(PERCENT),
+                "Cost of Employees/Hour (TTY)": ra.percent_change(hourly, QUARTERS_PER_YEAR),
+                "WPI (TTY)": ra.percent_change(wpi, QUARTERS_PER_YEAR),
             }
         ).dropna()
         multi_start(

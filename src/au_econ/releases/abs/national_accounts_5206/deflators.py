@@ -29,14 +29,6 @@ GROWTH_FROM = quarterly_plot_times[1]
 
 
 # --- helpers
-def _title(did: str) -> str:
-    """Return the chart title for a deflator ("Private: Gross fixed capital formation")."""
-    name = did.rstrip(" ;").replace(" ;  ", ": ")
-    if name.isupper():
-        name = name.title()
-    return f"Growth in {name} Implicit Price Deflator"
-
-
 def _growth_chart(series: pd.Series, title: str, common: dict[str, Any]) -> None:
     """Draw quarterly growth bars with the annual growth line, against the inflation target."""
     series_growth_plot_finalise(
@@ -68,7 +60,10 @@ def deflators(release: AbsRelease) -> None:
                 "legend": {"loc": "best", "fontsize": "xx-small"},
                 "pre_tag": "deflators-",
             }
-            title = _title(row[mc.did])
+            name = row[mc.did].rstrip(" ;").replace(" ;  ", ": ")  # "Private: Gross fixed capital formation"
+            if name.isupper():
+                name = name.title()
+            title = f"Growth in {name} Implicit Price Deflator"
             _growth_chart(series, title, common)
             if row[mc.did] in HEADLINE:
                 headline.append((series, title, common))

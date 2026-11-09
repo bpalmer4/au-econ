@@ -139,43 +139,6 @@ def _rebase(series: pd.Series, base: pd.Period) -> pd.Series:
     return series / series[series.index == base].iloc[0] * INDEX_BASE
 
 
-def _au_market_productivity() -> pd.Series:
-    """ABS market-sector gross value added per hour worked (SA, quarterly)."""
-    data, meta = get_table(KEY_AGGREGATES)
-    selector = {
-        KEY_AGGREGATES: mc.table,
-        "Gross value added per hour worked market sector: Index ;": mc.did,
-        SA: mc.stype,
-    }
-    table, series_id, _units = ra.find_abs_id(meta, selector, verbose=False)
-    return data[table][series_id].dropna()
-
-
-def _au_electricity_ppi() -> pd.Series:
-    """ABS PPI input price of electricity to manufacturing (quarterly index)."""
-    data, meta = ra.read_abs_cat(PPI_CATALOGUE, single_excel_only=PPI_TABLE, verbose=False)
-    return _abs_series(
-        data, meta, {PPI_TABLE: mc.table, "Index Numbers ;  Electricity ;": mc.did, ORIGINAL: mc.stype}
-    )
-
-
-def _au_manufacturing_share() -> pd.Series:
-    """AU manufacturing GVA as a share of GDP, current prices, SA, quarterly."""
-    gva_data, gva_meta = get_table(INDUSTRY_GVA)
-    gva = _abs_series(
-        gva_data,
-        gva_meta,
-        {INDUSTRY_GVA: mc.table, "Manufacturing (C) ;  Gross value added at basic prices ;": mc.did, SA: mc.stype},
-    )
-    ka_data, ka_meta = get_table(KEY_AGGREGATES)
-    gdp = _abs_series(
-        ka_data,
-        ka_meta,
-        {KEY_AGGREGATES: mc.table, "Gross domestic product: Current prices ;": mc.did, SA: mc.stype},
-    )
-    return (gva / gdp * PERCENT).dropna().rename("Australia")
-
-
 def fetch() -> Comparison:
     """Fetch every series, and rebase the productivity, cost and electricity series."""
     us_elec_m = dbnomics.get_series(DBNOMICS_PATHS["US industrial electricity price"], timeout=EIA_TIMEOUT)
@@ -184,11 +147,37 @@ def fetch() -> Comparison:
     us_elec_q = us_elec_m.groupby(us_elec_m.index.asfreq("Q-DEC")).mean()
     us_cpi_q = _fred("US CPI, all urban consumers", "q", "Q")
     au_cpi_q = get_cpi("headline_sa")[0]
+    ppi, ppi_meta = ra.read_abs_cat(PPI_CATALOGUE, single_excel_only=PPI_TABLE, verbose=False)
+    au_elec = _abs_series(  # PPI input price of electricity to manufacturing, quarterly index
+        ppi, ppi_meta, {PPI_TABLE: mc.table, "Index Numbers ;  Electricity ;": mc.did, ORIGINAL: mc.stype}
+    )
     us_mfg = _fred("US manufacturing value added, share of GDP", "q", "Q").rename("United States")
+    # ABS market-sector gross value added per hour worked (SA, quarterly)
+    ka_data, ka_meta = get_table(KEY_AGGREGATES)
+    selector = {
+        KEY_AGGREGATES: mc.table,
+        "Gross value added per hour worked market sector: Index ;": mc.did,
+        SA: mc.stype,
+    }
+    table, series_id, _units = ra.find_abs_id(ka_meta, selector, verbose=False)
+    au_market = ka_data[table][series_id].dropna()
+    # AU manufacturing GVA as a share of GDP, current prices, SA, quarterly
+    gva_data, gva_meta = get_table(INDUSTRY_GVA)
+    gva = _abs_series(
+        gva_data,
+        gva_meta,
+        {INDUSTRY_GVA: mc.table, "Manufacturing (C) ;  Gross value added at basic prices ;": mc.did, SA: mc.stype},
+    )
+    gdp = _abs_series(
+        ka_data,
+        ka_meta,
+        {KEY_AGGREGATES: mc.table, "Gross domestic product: Current prices ;": mc.did, SA: mc.stype},
+    )
+    au_mfg = (gva / gdp * PERCENT).dropna().rename("Australia")
     return Comparison(
         au_gdp_a=_rebase(dbnomics.get_series(DBNOMICS_PATHS["AU GDP per hour"]), BASE_YEAR),
         us_gdp_a=_rebase(dbnomics.get_series(DBNOMICS_PATHS["US GDP per hour"]), BASE_YEAR),
-        au_market_q=_rebase(_au_market_productivity(), BASE_QUARTER),
+        au_market_q=_rebase(au_market, BASE_QUARTER),
         us_nfb_q=_rebase(_fred("US non-farm business output per hour", "q", "Q"), BASE_QUARTER),
         au_ulc_q=_rebase(dbnomics.get_series(DBNOMICS_PATHS["AU unit labour costs"]), BASE_QUARTER),
         us_ulc_q=_rebase(dbnomics.get_series(DBNOMICS_PATHS["US unit labour costs"]), BASE_QUARTER),
@@ -198,9 +187,9 @@ def fetch() -> Comparison:
         us_ff_m=_fred("US effective federal funds rate, monthly", "m", "M").rename("United States"),
         au_overnight_d=_rba_daily(RBA_OVERNIGHT),
         us_ff_d=_fred("US effective federal funds rate, daily", "d", "D"),
-        au_elec_real=_rebase((_au_electricity_ppi() / au_cpi_q).dropna(), ELEC_BASE),
+        au_elec_real=_rebase((au_elec / au_cpi_q).dropna(), ELEC_BASE),
         us_elec_real=_rebase((us_elec_q / us_cpi_q).dropna(), ELEC_BASE),
-        mfg=pd.concat([us_mfg, _au_manufacturing_share()], axis=1).sort_index(),
+        mfg=pd.concat([us_mfg, au_mfg], axis=1).sort_index(),
     )
 
 

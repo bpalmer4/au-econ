@@ -66,39 +66,33 @@ def _quarterly(series: pd.Series) -> pd.Series:
     return series
 
 
-def _new_investment(release: AbsRelease) -> pd.Series:
-    """Return new private business investment: total less net purchases of second-hand assets (CVM, SA)."""
-
-    def series(did: str) -> pd.Series:
-        _, series_id, _ = ra.find_abs_id(
-            release.meta, {EXPENDITURE_VOLUME: mc.table, did: mc.did, SEASONALLY_ADJUSTED: mc.stype}
-        )
-        return _quarterly(release.data[EXPENDITURE_VOLUME][series_id])
-
-    return (
-        series(f"{GFCF}Total private business investment ;")
-        - series(f"{GFCF}Non-dwelling construction - Net purchase of second hand assets ;")
-        - series(f"{GFCF}Machinery and equipment - Net purchase of second hand assets ;")
-    )
-
-
-def _capex() -> tuple[pd.Series, dict[str, pd.Series]]:
-    """Return the capex survey total and one series per sector (5625.0, CVM, SA)."""
-    data, meta = ra.read_abs_cat(CAPEX_CATALOGUE, single_excel_only=CAPEX_TABLE, verbose=False)
-
-    def series(industry: str) -> pd.Series:
-        _, series_id, _ = ra.find_abs_id(meta, {CAPEX_TABLE: mc.table, CAPEX_ALL_ASSETS: mc.did, industry: mc.did})
-        return _quarterly(data[CAPEX_TABLE][series_id])
-
-    return series(CAPEX_TOTAL), {sector: series(fragment) for sector, (fragment, _) in SECTORS.items()}
-
-
 # --- charts
 def business_investment(release: AbsRelease) -> None:
     """Each sector's contribution against all other industries, full history and since 2019Q4."""
-    total = _new_investment(release)
-    capex_total, sectors = _capex()
-    full_growth = (total.pct_change(QUARTERS_PER_YEAR) * PERCENT).dropna()
+    # new private business investment: total less net purchases of second-hand assets (CVM, SA)
+    parts = []
+    for did in (
+        f"{GFCF}Total private business investment ;",
+        f"{GFCF}Non-dwelling construction - Net purchase of second hand assets ;",
+        f"{GFCF}Machinery and equipment - Net purchase of second hand assets ;",
+    ):
+        _, series_id, _ = ra.find_abs_id(
+            release.meta, {EXPENDITURE_VOLUME: mc.table, did: mc.did, SEASONALLY_ADJUSTED: mc.stype}
+        )
+        parts.append(_quarterly(release.data[EXPENDITURE_VOLUME][series_id]))
+    total = parts[0] - parts[1] - parts[2]
+
+    # the capex survey total and one series per sector (5625.0, CVM, SA)
+    data, meta = ra.read_abs_cat(CAPEX_CATALOGUE, single_excel_only=CAPEX_TABLE, verbose=False)
+    sectors = {}
+    for name, industry in (
+        {CAPEX_TOTAL: CAPEX_TOTAL} | {s: fragment for s, (fragment, _) in SECTORS.items()}
+    ).items():
+        selector = {CAPEX_TABLE: mc.table, CAPEX_ALL_ASSETS: mc.did, industry: mc.did}
+        _, series_id, _ = ra.find_abs_id(meta, selector)
+        sectors[name] = _quarterly(data[CAPEX_TABLE][series_id])
+    capex_total = sectors.pop(CAPEX_TOTAL)
+    full_growth = ra.percent_change(total, QUARTERS_PER_YEAR).dropna()
     full_growth.name = "Total"
     with chart_subdir(SUBDIR):
         for sector, series in sectors.items():

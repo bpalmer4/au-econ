@@ -113,10 +113,6 @@ def _recalibrated[T: (pd.Series, pd.DataFrame)](data: T, units: str) -> tuple[T,
     return result, units
 
 
-def _yoy(series: pd.Series) -> pd.Series:
-    return (series / series.shift(QUARTERS_PER_YEAR) - 1) * PERCENT
-
-
 def _headline_chart(series: pd.Series, title: str, units: str, rfooter: str) -> None:
     multi_start(
         series,
@@ -351,7 +347,12 @@ def gdp_deflator_from_bop(release: AbsRelease) -> None:
     real, _ = get_gdp("CVM", "SA")
     gdp_deflator = nominal.dropna() / real.dropna() * PERCENT
     export_deflator = _by_did(release, CREDITS_CP) / _by_did(release, CREDITS_CVM) * PERCENT
-    frame = pd.DataFrame({"gdp": _yoy(gdp_deflator), "bop": _yoy(export_deflator)}).dropna()
+    frame = pd.DataFrame(
+        {
+            "gdp": ra.percent_change(gdp_deflator, QUARTERS_PER_YEAR),
+            "bop": ra.percent_change(export_deflator, QUARTERS_PER_YEAR),
+        }
+    ).dropna()
     corr = frame["gdp"].corr(frame["bop"])
     scatter_plot_finalise(
         frame[["bop", "gdp"]],  # x first: the export deflator against the GDP deflator

@@ -66,8 +66,9 @@ def _release_month(url: str) -> tuple[int, int]:
     return (0, 0) if match is None else (int(match.group(2)), MONTHS.index(match.group(1)) + 1)
 
 
-def _workbook_url() -> str:
-    """Return the URL of the most recent data-extract workbook."""
+def get_workbook() -> bytes:
+    """Return the most recent Australian Petroleum Statistics workbook."""
+    # the most recent data-extract workbook: this year's page, else last year's
     year = pd.Timestamp.today().year
     for try_year in (year, year - 1):
         page = requests.get(PAGE_TEMPLATE.format(year=try_year), timeout=TIMEOUT)
@@ -80,13 +81,10 @@ def _workbook_url() -> str:
         dated = [link for link in links if _release_month(link) != (0, 0)]
         if dated:
             newest = max(dated, key=_release_month)
-            return newest if newest.startswith("http") else BASE_URL + newest
-    raise ValueError("No petroleum statistics workbook found for the current or previous year")
-
-
-def get_workbook() -> bytes:
-    """Return the most recent Australian Petroleum Statistics workbook."""
-    url = _workbook_url()
+            url = newest if newest.startswith("http") else BASE_URL + newest
+            break
+    else:
+        raise ValueError("No petroleum statistics workbook found for the current or previous year")
     print(f"Petroleum statistics workbook: {_file_name(url)}")
     return get_file(url, prefix="dcceew")
 
@@ -105,18 +103,14 @@ def fuel_price_sheet(workbook: bytes) -> pd.DataFrame:
     return frame.drop(columns=["Year", "Quarter"])
 
 
-def _inventory_slugs(quarter: pd.Period) -> list[str]:
-    """Page-name endings for a quarter's update, e.g. "march-2026"; September is sometimes "sept"."""
-    month = quarter.end_time.month
-    names = [MONTHS[month - 1]] + (["sept"] if month == SEPTEMBER else [])
-    return [f"{name}-{quarter.year}" for name in names]
-
-
 def get_inventory_workbook() -> tuple[bytes, pd.Period]:
     """Return the most recent greenhouse gas inventory workbook and the quarter it reports."""
     current = pd.Timestamp.today().to_period("Q")
     for quarter in (current - lag for lag in range(INVENTORY_LOOKBACK)):
-        for slug in _inventory_slugs(quarter):
+        # page-name endings for the quarter's update, e.g. "march-2026"; September is sometimes "sept"
+        month = quarter.end_time.month
+        names = [MONTHS[month - 1]] + (["sept"] if month == SEPTEMBER else [])
+        for slug in (f"{name}-{quarter.year}" for name in names):
             page = requests.get(INVENTORY_PAGE.format(slug), timeout=TIMEOUT)
             if page.status_code != OK:
                 continue

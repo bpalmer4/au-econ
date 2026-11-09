@@ -387,30 +387,25 @@ def cash_rate_and_es_rate(data: RatesData) -> None:
     )
 
 
-def _lending_charts(data: RatesData, table: str, wanted: dict[str, str], pre_tag: str) -> None:
-    """Chart each wanted lending-rate series of one table separately."""
-    frame, meta = data.tables[table]
-    if not meta["Series ID"].is_unique:
-        raise ValueError("Series IDs not unique")
-    for series_id in wanted.values():
-        series = frame[meta[meta["Series ID"] == series_id].index[0]].dropna().astype(float)
-        series, unit = ra.recalibrate(series, str(meta.loc[series_id, "Units"]))
-        series.name = series_id
-        mg.line_plot_finalise(
-            series,
-            title=textwrap.fill(str(meta.loc[series_id, "Title"]), LENDING_TITLE_WIDTH),
-            ylabel=unit,
-            rfooter=f"{SOURCE} {table}",
-            lfooter=f"Australia. Data to {series.index[-1]}. ",
-            pre_tag=pre_tag,
-            annotate=True,
-        )
-
-
 def lending_rates(data: RatesData) -> None:
     """Chart selected F5 and F6 lending rates, one chart each."""
     for table, wanted in LENDING_RATES.items():
-        _lending_charts(data, table, wanted, f"{table.lower()}-")
+        frame, meta = data.tables[table]
+        if not meta["Series ID"].is_unique:
+            raise ValueError("Series IDs not unique")
+        for series_id in wanted.values():
+            series = frame[meta[meta["Series ID"] == series_id].index[0]].dropna().astype(float)
+            series, unit = ra.recalibrate(series, str(meta.loc[series_id, "Units"]))
+            series.name = series_id
+            mg.line_plot_finalise(
+                series,
+                title=textwrap.fill(str(meta.loc[series_id, "Title"]), LENDING_TITLE_WIDTH),
+                ylabel=unit,
+                rfooter=f"{SOURCE} {table}",
+                lfooter=f"Australia. Data to {series.index[-1]}. ",
+                pre_tag=f"{table.lower()}-",
+                annotate=True,
+            )
 
 
 # --- table of contents, in run order

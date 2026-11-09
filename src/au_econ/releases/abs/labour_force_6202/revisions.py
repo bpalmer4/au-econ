@@ -77,24 +77,19 @@ def _prints(table: str) -> tuple[tuple[dict[str, pd.DataFrame], pd.DataFrame], .
     return tuple(prints)
 
 
-def _history(did: str, stype: str) -> tuple[pd.DataFrame, str]:
-    """Return one series as published in each release, a column per release, with its units."""
-    table = HOURS if did == HOURS_WORKED else MAIN
-    repository, units = pd.DataFrame(), ""
-    for data, meta in _prints(table):
-        _table, series_id, units = ra.find_abs_id(
-            meta, {did: mc.did, stype: mc.stype, table: mc.table}, verbose=False
-        )
-        repository[f"ABS print for {data[table].index[-1].strftime('%b-%Y')}"] = data[table][series_id]
-    return repository, units
-
-
 # --- charts
 def revisions(release: AbsRelease) -> None:
     """Each headline series over the last three years, as published in each of the latest releases."""
     for did, stypes in REVISED:
+        table = HOURS if did == HOURS_WORKED else MAIN
         for stype in stypes:
-            repository, units = _history(did, stype)
+            # the series as published in each release, a column per release
+            repository, units = pd.DataFrame(), ""
+            for data, meta in _prints(table):
+                _table, series_id, units = ra.find_abs_id(
+                    meta, {did: mc.did, stype: mc.stype, table: mc.table}, verbose=False
+                )
+                repository[f"ABS print for {data[table].index[-1].strftime('%b-%Y')}"] = data[table][series_id]
             repository, units = ra.recalibrate(repository.iloc[-THREE_YEARS:], units)
             revision_plot_finalise(
                 repository,

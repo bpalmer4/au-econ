@@ -20,38 +20,33 @@ WINDOW_YEARS = 15  # about 3,900 trading days, inside ROW_LIMIT
 EARLIEST = pd.Timestamp("1970-01-01")  # before any series this module is asked for
 
 
-def _window(
-    session: cffi_requests.Session, instrument_id: int, start: pd.Timestamp, end: pd.Timestamp
-) -> pd.Series:
-    """One window of daily closes, possibly empty (before a series begins)."""
-    params = {
-        "start-date": start.strftime("%Y-%m-%d"),
-        "end-date": end.strftime("%Y-%m-%d"),
-        "time-frame": "Daily",
-        "add-missing-rows": "false",
-    }
-    url = HISTORY_URL.format(instrument_id=instrument_id)
-    response = session.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
-    response.raise_for_status()
-    rows = response.json().get("data") or []
-    if not isinstance(rows, list):
-        raise TypeError(f"Investing.com {instrument_id}: expected a list of rows")
-    if len(rows) >= ROW_LIMIT:
-        raise ValueError(f"Investing.com {instrument_id}: {start.date()} to {end.date()} reached the row limit")
-    dates = pd.to_datetime([row["rowDateTimestamp"] for row in rows], utc=True).tz_localize(None)
-    closes = pd.to_numeric(pd.Series([row["last_closeRaw"] for row in rows]), errors="coerce")
-    return pd.Series(closes.to_numpy(), index=pd.PeriodIndex(dates, freq="D"))
-
-
 def get_history(instrument_id: int) -> pd.Series:
     """Return an instrument's full daily close history, with a daily PeriodIndex."""
     session = cffi_requests.Session(impersonate=IMPERSONATE, curl_options={CurlOpt.CAINFO: certifi.where()})
+    url = HISTORY_URL.format(instrument_id=instrument_id)
     today = pd.Timestamp.today().normalize()
     pieces = []
     start = EARLIEST
-    while start <= today:
+    while start <= today:  # one window of daily closes at a time, possibly empty (before a series begins)
         end = min(start + pd.DateOffset(years=WINDOW_YEARS) - pd.Timedelta(days=1), today)
-        pieces.append(_window(session, instrument_id, start, end))
+        params = {
+            "start-date": start.strftime("%Y-%m-%d"),
+            "end-date": end.strftime("%Y-%m-%d"),
+            "time-frame": "Daily",
+            "add-missing-rows": "false",
+        }
+        response = session.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+        response.raise_for_status()
+        rows = response.json().get("data") or []
+        if not isinstance(rows, list):
+            raise TypeError(f"Investing.com {instrument_id}: expected a list of rows")
+        if len(rows) >= ROW_LIMIT:
+            raise ValueError(
+                f"Investing.com {instrument_id}: {start.date()} to {end.date()} reached the row limit"
+            )
+        dates = pd.to_datetime([row["rowDateTimestamp"] for row in rows], utc=True).tz_localize(None)
+        closes = pd.to_numeric(pd.Series([row["last_closeRaw"] for row in rows]), errors="coerce")
+        pieces.append(pd.Series(closes.to_numpy(), index=pd.PeriodIndex(dates, freq="D")))
         start = end + pd.Timedelta(days=1)
     series = pd.concat(pieces).dropna().sort_index()
     if series.empty:

@@ -63,22 +63,16 @@ class FxData:
 
 
 # --- data
-def _history_tables() -> list[str]:
-    """Return the daily history workbooks' table names, in catalogue order."""
-    catalogue = ra.rba_catalogue()
-    tables = [str(name) for name in catalogue.index if str(name).startswith(HISTORY_PREFIX)]
-    if not tables:
-        raise ValueError(f"RBA catalogue lists no {HISTORY_PREFIX} tables")
-    return tables
-
-
 def fetch() -> FxData:
     """Fetch F11.1 and join the daily history workbooks into one frame of numbers."""
     current, current_meta = rba.get_table(TABLE)
     parts = []
     names: dict[str, str] = {}
     units: dict[str, str] = {}
-    for table in _history_tables():
+    history_tables = [str(name) for name in ra.rba_catalogue().index if str(name).startswith(HISTORY_PREFIX)]
+    if not history_tables:
+        raise ValueError(f"RBA catalogue lists no {HISTORY_PREFIX} tables")
+    for table in history_tables:
         data, meta = rba.get_table(table)
         data = data.loc[:, data.columns.notna()]
         data = data.replace(CLOSED_MARKERS).dropna(how="all", axis=0).astype(float)

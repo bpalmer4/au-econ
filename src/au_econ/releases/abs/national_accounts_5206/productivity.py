@@ -125,7 +125,7 @@ def labour_productivity(release: AbsRelease) -> None:
             **common(title, comparison),
         )
         for label, series in productivity.items():
-            growth = (series.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+            growth = ra.percent_change(series, QUARTERS_PER_YEAR).dropna()
             line_plot_finalise(
                 pd.DataFrame(
                     {"Annual growth": growth, f"{HENDERSON_TERMS}-term HMA": hma(growth, HENDERSON_TERMS)}
@@ -151,7 +151,7 @@ def mfp(release: AbsRelease) -> None:
 
     l_norm, k_norm, y_norm = hours / hours.iloc[0], capital / capital.iloc[0], gdp / gdp.iloc[0]
     level = (y_norm / (l_norm**alpha * k_norm ** (1 - alpha)) * PERCENT).dropna()
-    growth = (level.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+    growth = ra.percent_change(level, QUARTERS_PER_YEAR).dropna()
     growth_hp, growth_hma = _hp_trend(growth), hma(growth, HENDERSON_TERMS)
 
     lfooter = f"{AUSTRALIA}{SA_NOTE}{CVM_NOTE}Solow residual. Capital stock via PIM (2.5% p.a. depreciation). "
@@ -226,9 +226,9 @@ def gdp_decomposition(release: AbsRelease) -> None:
 
     contributions = pd.DataFrame(
         {
-            "GDP Growth": gdp.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
-            "Labour": ((1 - alpha) * (hours.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT)).dropna(),
-            "Capital": (alpha * (capital.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT)).dropna(),
+            "GDP Growth": ra.percent_change(gdp, QUARTERS_PER_YEAR),
+            "Labour": ((1 - alpha) * ra.percent_change(hours, QUARTERS_PER_YEAR)).dropna(),
+            "Capital": (alpha * ra.percent_change(capital, QUARTERS_PER_YEAR)).dropna(),
         }
     ).dropna()
     contributions["MFP"] = contributions["GDP Growth"] - contributions["Labour"] - contributions["Capital"]
@@ -274,7 +274,7 @@ def capital_deepening(release: AbsRelease) -> None:
     deepening.name = "Capital Deepening (K/L)"
     capital_productivity = (y_norm / k_norm * PERCENT).dropna()
     capital_productivity.name = "Capital Productivity (Y/K)"
-    deepening_growth = (deepening.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+    deepening_growth = ra.percent_change(deepening, QUARTERS_PER_YEAR).dropna()
     comparison = pd.DataFrame(
         {
             "Labour Productivity (Y/L)": (y_norm / l_norm * PERCENT).dropna(),

@@ -95,8 +95,25 @@ def _read(catalogue: str, table: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return data[table], meta
 
 
-def _growth(tables: dict[str, pd.DataFrame], meta: dict[str, pd.DataFrame]) -> tuple[dict[str, pd.Series], str]:
-    """Collect the growth measures and derive the annual aggregates, all on a monthly index."""
+def load() -> PopulationData:
+    """Fetch the 3101.0 aggregate, state and age tables and the 3401.0 movements; derive the growth measures."""
+    tables, meta = {}, {}
+    for catalogue, table in (
+        (CATALOGUE, AGGREGATES),
+        (CATALOGUE, STATES_TABLE),
+        (MOVEMENTS_CATALOGUE, ARRIVALS),
+        (MOVEMENTS_CATALOGUE, DEPARTURES),
+    ):
+        tables[table], meta[table] = _read(catalogue, table)
+    print(f"ERP (310101)         current to: {tables[AGGREGATES].index[-1]}")
+    print(f"State ERP (310104)   current to: {tables[STATES_TABLE].index[-1]}")
+
+    age_data, age_meta_parts = {}, []
+    for table in AGE_TABLES:
+        age_data[table], table_meta = _read(CATALOGUE, table)
+        age_meta_parts.append(table_meta[table_meta[mc.table] == table])
+
+    # the growth measures and the derived annual aggregates
     data: dict[str, pd.Series] = {}
     units: dict[str, str] = {}
     for key, (table, did, *unit) in GROWTH_SERIES.items():
@@ -119,45 +136,23 @@ def _growth(tables: dict[str, pd.DataFrame], meta: dict[str, pd.DataFrame]) -> t
     implicit = get_implicit_population()[0] / THOUSAND
     data["Implicit population from National Accounts"] = implicit
     data["Implicit population (from National Accounts) growth"] = implicit.diff(periods=QUARTERS_PER_YEAR)
-    data["Implicit population (from National Accounts) growth rate"] = (
-        implicit.pct_change(periods=QUARTERS_PER_YEAR, fill_method=None) * PERCENT
+    data["Implicit population (from National Accounts) growth rate"] = ra.percent_change(
+        implicit, QUARTERS_PER_YEAR
     )
 
-    monthly = {}
+    growth = {}  # all on a monthly index
     for key, series in data.items():
         index = series.index
         if not isinstance(index, pd.PeriodIndex):
             raise TypeError(f"{key}: expected a PeriodIndex")
-        monthly[key] = ra.qtly_to_monthly(series) if index.freqstr[0] == "Q" else series
-    return monthly, units[ERP_GROWTH]
-
-
-def load() -> PopulationData:
-    """Fetch the 3101.0 aggregate, state and age tables and the 3401.0 movements; derive the growth measures."""
-    tables, meta = {}, {}
-    for catalogue, table in (
-        (CATALOGUE, AGGREGATES),
-        (CATALOGUE, STATES_TABLE),
-        (MOVEMENTS_CATALOGUE, ARRIVALS),
-        (MOVEMENTS_CATALOGUE, DEPARTURES),
-    ):
-        tables[table], meta[table] = _read(catalogue, table)
-    print(f"ERP (310101)         current to: {tables[AGGREGATES].index[-1]}")
-    print(f"State ERP (310104)   current to: {tables[STATES_TABLE].index[-1]}")
-
-    age_data, age_meta_parts = {}, []
-    for table in AGE_TABLES:
-        age_data[table], table_meta = _read(CATALOGUE, table)
-        age_meta_parts.append(table_meta[table_meta[mc.table] == table])
-
-    growth, erp_growth_units = _growth(tables, meta)
+        growth[key] = ra.qtly_to_monthly(series) if index.freqstr[0] == "Q" else series
     return PopulationData(
         tables=tables,
         meta=meta,
         age_data=age_data,
         age_meta=pd.concat(age_meta_parts),
         growth=growth,
-        erp_growth_units=erp_growth_units,
+        erp_growth_units=units[ERP_GROWTH],
     )
 
 

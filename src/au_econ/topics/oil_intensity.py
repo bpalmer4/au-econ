@@ -39,20 +39,17 @@ class OilIntensity:
     intensity: pd.Series
 
 
-def _annual_gdp() -> pd.Series:
-    """Real GDP ($ millions, original) summed over each complete calendar year."""
+def fetch() -> OilIntensity:
+    """Fetch oil consumption and real GDP and divide one by the other."""
+    oil = owid.get_statistical_review(COUNTRY, OIL_COLUMN)
+    # real GDP ($ millions, original) summed over each complete calendar year
     quarterly, units = get_gdp("CVM", "O")
     if units != GDP_UNITS:
         raise ValueError(f"Expected GDP in {GDP_UNITS}, got {units}")
     quarterly = quarterly.dropna()
     years = quarterly.groupby(pd.PeriodIndex(quarterly.index).asfreq("Y-DEC"))
-    return years.sum()[years.count() == QUARTERS_PER_YEAR]
-
-
-def fetch() -> OilIntensity:
-    """Fetch oil consumption and real GDP and divide one by the other."""
-    oil = owid.get_statistical_review(COUNTRY, OIL_COLUMN)
-    intensity = (oil * TONNES_PER_THOUSAND / _annual_gdp()).dropna()
+    annual_gdp = years.sum()[years.count() == QUARTERS_PER_YEAR]
+    intensity = (oil * TONNES_PER_THOUSAND / annual_gdp).dropna()
     if intensity.empty:
         raise ValueError("Oil consumption and real GDP share no years")
     latest = intensity.iloc[-1]

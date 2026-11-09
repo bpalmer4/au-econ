@@ -16,11 +16,11 @@ LEGEND = {"loc": "best", "fontsize": "x-small"}
 
 
 def last_day(data: pd.DataFrame | pd.Series) -> str:
-    """Return the last date with any data, e.g. "2-Oct-2026"."""
+    """Return the last date with any data, e.g. "02-Oct-2026"."""
     last = data.dropna(how="all").index[-1]
     if not isinstance(last, pd.Period):
         raise TypeError("Expected a PeriodIndex")
-    return last.strftime("%-d-%b-%Y")
+    return last.strftime("%d-%b-%Y")
 
 
 def fetch_closes(tickers: list[str], start: str | None) -> dict[str, pd.Series]:

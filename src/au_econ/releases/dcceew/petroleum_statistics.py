@@ -76,15 +76,6 @@ def fetch() -> PetroleumData:
 
 
 # --- helpers
-def _data_to(data: pd.Series | pd.DataFrame) -> str:
-    """Name the last period with data in what is plotted (sheets end at different points)."""
-    valid = data.dropna(how="all") if isinstance(data, pd.DataFrame) else data.dropna()
-    last = valid.index[-1]
-    if not isinstance(last, pd.Period):
-        raise TypeError("expected a PeriodIndex")
-    return f"Data to {last.strftime('%b %Y') if last.freqstr.startswith('M') else last}."
-
-
 def _line[T: (pd.Series, pd.DataFrame)](
     data: T, *, title: str, ylabel: str, lfooter: str, legend: bool = False
 ) -> None:
@@ -92,13 +83,19 @@ def _line[T: (pd.Series, pd.DataFrame)](
 
     Without a legend, a single series gets none, as mgplot's default would give it.
     """
+    # the last period with data in what is plotted (sheets end at different points)
+    valid = data.dropna(how="all") if isinstance(data, pd.DataFrame) else data.dropna()
+    last = valid.index[-1]
+    if not isinstance(last, pd.Period):
+        raise TypeError("expected a PeriodIndex")
+    data_to = f"Data to {last.strftime('%b %Y') if last.freqstr.startswith('M') else last}."
     line_plot_finalise(
         data,
         title=title,
         ylabel=ylabel,
         legend=LEGEND if legend else False,
         rfooter=SOURCE,
-        lfooter=f"{lfooter} {_data_to(data)}",
+        lfooter=f"{lfooter} {data_to}",
     )
 
 

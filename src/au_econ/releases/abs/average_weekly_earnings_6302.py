@@ -52,7 +52,7 @@ def earnings(release: AbsRelease) -> None:
 def earnings_growth(release: AbsRelease) -> None:
     """Annual growth in seasonally adjusted earnings."""
     frame, _units = _earnings(release)
-    growth = frame[SEASONALLY_ADJUSTED].pct_change(ANNUAL_PERIODS) * 100
+    growth = ra.percent_change(frame[SEASONALLY_ADJUSTED], ANNUAL_PERIODS)
     line_plot_finalise(
         growth,
         title=f"Growth Rate: {CHART_TITLE}",

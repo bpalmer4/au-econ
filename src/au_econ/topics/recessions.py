@@ -117,22 +117,22 @@ def fetch() -> RecessionData:
     sources["population"] = {CAT_GDP}
     data["Employed"] = data["Labour force"] - data["Unemployed"]
     sources["Employed"] = {CAT_MDB}
-    data["Employment Growth Q/Q"] = data["Employed"].pct_change(1) * PERCENT
+    data["Employment Growth Q/Q"] = ra.percent_change(data["Employed"], 1)
     sources["Employment Growth Q/Q"] = sources["Employed"]
-    data["Employment Growth Y/Y"] = data["Employed"].pct_change(QUARTERS_PER_YEAR) * PERCENT
+    data["Employment Growth Y/Y"] = ra.percent_change(data["Employed"], QUARTERS_PER_YEAR)
     sources["Employment Growth Y/Y"] = sources["Employed"]
     data["Employment Technical Recession"] = _two_negative_quarters(data["Employment Growth Q/Q"])
     data["Negative Annual Employment Growth"] = data["Employment Growth Y/Y"] < 0
     data["Unemployment Rate"] = data["Unemployed"] / data["Labour force"] * PERCENT
     sources["Unemployment Rate"] = {CAT_MDB}
-    data["GDP Growth Q/Q"] = data["GDP (SA/CVM/MDB)"].pct_change(1) * PERCENT
+    data["GDP Growth Q/Q"] = ra.percent_change(data["GDP (SA/CVM/MDB)"], 1)
     sources["GDP Growth Q/Q"] = {CAT_MDB}
-    data["GDP Growth Y/Y"] = data["GDP (SA/CVM/MDB)"].pct_change(QUARTERS_PER_YEAR) * PERCENT
+    data["GDP Growth Y/Y"] = ra.percent_change(data["GDP (SA/CVM/MDB)"], QUARTERS_PER_YEAR)
     sources["GDP Growth Y/Y"] = {CAT_MDB}
     data["Negative Annual GDP Growth"] = data["GDP Growth Y/Y"] < 0
     data["GDP Technical Recession"] = _two_negative_quarters(data["GDP Growth Q/Q"])
     data["GDP Per Capita"] = data["GDP (SA/CVM/MDB)"] / data["population"]
-    data["GDP per Capita Growth"] = data["GDP Per Capita"].pct_change(1) * PERCENT
+    data["GDP per Capita Growth"] = ra.percent_change(data["GDP Per Capita"], 1)
     sources["GDP per Capita Growth"] = sources["population"] | sources["GDP Growth Q/Q"]
     data["GDP per Capita Technical Recession"] = _two_negative_quarters(data["GDP per Capita Growth"])
     data["Rapid Unemployment Growth"] = (
@@ -163,16 +163,6 @@ def _rfooter(recessions: RecessionData, label: str) -> str:
     return f"ABS: {', '.join(sorted(recessions.sources[label]))}"
 
 
-def _recession(points: pd.Series) -> pd.Series:
-    """Flag quarters with RECESSION_THRESHOLD+ indicators, and a shoulder quarter either side with one or more."""
-    shoulder = points >= SHOULDER_THRESHOLD
-    return (
-        (points >= RECESSION_THRESHOLD)
-        | (shoulder & (points.shift(1) >= RECESSION_THRESHOLD))
-        | (shoulder & (points.shift(-1) >= RECESSION_THRESHOLD))
-    )
-
-
 # --- charts
 def events(recessions: RecessionData) -> None:
     """Chart each growth measure, and the unemployment rate, with its contraction event shaded."""
@@ -197,7 +187,13 @@ def recession_periods(recessions: RecessionData) -> None:
     """Chart recessions by indicator intensity, and against GDP and employment growth."""
     data = recessions.data
     points = data[list(INDICATORS)].sum(axis=1)
-    recession = _recession(points)
+    # quarters with RECESSION_THRESHOLD+ indicators, and a shoulder quarter either side with one or more
+    shoulder = points >= SHOULDER_THRESHOLD
+    recession = (
+        (points >= RECESSION_THRESHOLD)
+        | (shoulder & (points.shift(1) >= RECESSION_THRESHOLD))
+        | (shoulder & (points.shift(-1) >= RECESSION_THRESHOLD))
+    )
     print(f"Naive recession probability: {recession.sum() / len(recession) * PERCENT:0.0f}%")
     threshold_note = f"Indicator threshold is {RECESSION_THRESHOLD} of {len(INDICATORS)}. "
 

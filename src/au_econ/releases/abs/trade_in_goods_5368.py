@@ -39,23 +39,6 @@ def fetch() -> AbsRelease:
     return fetch_release(CATALOGUE)
 
 
-def _exports_by_group(release: AbsRelease) -> pd.DataFrame:
-    """Quarterly merchandise exports, summed into the SITC narrative buckets."""
-    meta = release.meta
-    meta_t = meta[meta[mc.table] == EXP_TABLE].copy()
-    meta_t["sitc"] = meta_t[mc.did].str.extract(r"^(\d) ", expand=False)
-    meta_t = meta_t[meta_t["sitc"].notna()]
-    monthly = pd.concat(
-        {row["sitc"]: release.data[EXP_TABLE][row[mc.id]] for _, row in meta_t.iterrows()},
-        axis=1,
-    ).sort_index(axis=1)
-    if not isinstance(monthly.index, pd.PeriodIndex):
-        raise TypeError("Expected a monthly PeriodIndex on the export table")
-    # monthly $ millions -> quarterly sums (flow data)
-    quarterly = monthly.groupby(monthly.index.asfreq("Q-DEC")).sum(min_count=MONTHS_PER_QUARTER).dropna()
-    return pd.concat({name: quarterly[codes].sum(axis=1) for name, codes in SITC_GROUPS.items()}, axis=1)
-
-
 def _stack(frame: pd.DataFrame, source: str, *, ylabel: str, title: str, tag: str) -> None:
     """Draw the columns as stacked bands, bottom to top in column order."""
     ax = None
@@ -101,7 +84,20 @@ def trade_balance(release: AbsRelease) -> None:
 
 def export_composition(release: AbsRelease) -> None:
     """Chart goods export composition by SITC group: as a share of the total, and in $ billions a quarter."""
-    grouped = _exports_by_group(release)
+    # quarterly merchandise exports, summed into the SITC narrative buckets
+    meta = release.meta
+    meta_t = meta[meta[mc.table] == EXP_TABLE].copy()
+    meta_t["sitc"] = meta_t[mc.did].str.extract(r"^(\d) ", expand=False)
+    meta_t = meta_t[meta_t["sitc"].notna()]
+    monthly = pd.concat(
+        {row["sitc"]: release.data[EXP_TABLE][row[mc.id]] for _, row in meta_t.iterrows()},
+        axis=1,
+    ).sort_index(axis=1)
+    if not isinstance(monthly.index, pd.PeriodIndex):
+        raise TypeError("Expected a monthly PeriodIndex on the export table")
+    # monthly $ millions -> quarterly sums (flow data)
+    quarterly = monthly.groupby(monthly.index.asfreq("Q-DEC")).sum(min_count=MONTHS_PER_QUARTER).dropna()
+    grouped = pd.concat({name: quarterly[codes].sum(axis=1) for name, codes in SITC_GROUPS.items()}, axis=1)
     _stack(
         grouped.div(grouped.sum(axis=1), axis=0) * PERCENT,
         release.source,

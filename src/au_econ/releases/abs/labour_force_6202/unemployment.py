@@ -49,61 +49,6 @@ CONDITIONS = (("up", HARDER), ("down", EASIER), ("both", (HARDER, EASIER)))  # d
 OCR_COMPARISON_FROM = "1993-01-01"
 
 
-# --- helpers
-def _runs(flags: pd.Series) -> list[tuple[pd.Period, pd.Period]]:
-    """Return the (first, last) period of each run of True values."""
-    index = flags.index
-    if not isinstance(index, pd.PeriodIndex):
-        raise TypeError(f"Expected a PeriodIndex, got {type(index).__name__}")
-    runs: list[tuple[pd.Period, pd.Period]] = []
-    start: pd.Period | None = None
-    for position, (period, flag) in enumerate(zip(index, flags, strict=True)):
-        if flag and start is None:
-            start = period
-        if start is not None and not flag:
-            runs.append((start, index[position - 1]))
-            start = None
-    if start is not None:
-        runs.append((start, index[-1]))
-    return runs
-
-
-def _sahm_chart(rate: pd.Series, threshold: float, source: str) -> tuple[pd.Series, pd.Series]:
-    """Shade the months the 3-month average rose more than threshold above its prior 12-month minimum.
-
-    Returns the 3-month average and the prior 12-month minimum.
-    """
-    average = rate.rolling(SAHM_AVERAGE).mean().rename("3 Month rolling average unemployment rate")
-    minimum = average.rolling(MONTHS_PER_YEAR).min()
-    prior_minimum = minimum.shift(1)  # the 12 months before the current one
-    spans: list[dict[str, Any]] = [
-        {"xmin": first, "xmax": last, "color": SAHM_COLOUR, "alpha": SAHM_ALPHA}
-        for first, last in _runs(prior_minimum < average - threshold)
-    ]
-    if spans:
-        spans[0]["label"] = f"Growth > {threshold} percentage points over minimum through the year"
-    ax = line_plot(average, color=SAHM_LINE_COLOUR)
-
-    def latest(series: pd.Series) -> str:
-        return ", ".join(str(x) for x in series.iloc[-SAHM_RHEADER_VALUES:].round(2))
-
-    finalise_plot(
-        ax,
-        title=f"Unemployment Rate: Rises over {threshold}pp Through the Year",
-        ylabel=PER_CENT_OF_LABOUR_FORCE,
-        y0=True,
-        axvspan=spans,
-        legend={"loc": "best", "fontsize": 8},
-        rfooter=source,
-        lfooter=SAHM_LFOOTER,
-        rheader=f"Last 3 UER: {latest(rate)};  "
-        f"Last 3m MA: {latest(average)};  "
-        f"Last 3m minimum: {latest(minimum)};  "
-        f"Forward headroom: {threshold - (average.iloc[-1] - minimum.iloc[-1]):.2f}",
-    )
-    return average, prior_minimum
-
-
 # --- charts
 def long_run_unemployment(release: AbsRelease) -> None:
     """Chart the unemployment rate spliced back to 1950, and print the backcast fit statistics."""
@@ -159,7 +104,48 @@ def sahm(release: AbsRelease) -> None:
     rate, _units = get_series(release, MAIN, UNEMPLOYMENT_RATE, SEASONALLY_ADJUSTED, exact_match=True)
     frame = pd.DataFrame()
     for threshold in SAHM_THRESHOLDS:
-        average, prior_minimum = _sahm_chart(rate, threshold, release.source)
+        # shade the months the 3-month average rose more than threshold above its prior 12-month minimum
+        average = rate.rolling(SAHM_AVERAGE).mean().rename("3 Month rolling average unemployment rate")
+        minimum = average.rolling(MONTHS_PER_YEAR).min()
+        prior_minimum = minimum.shift(1)  # the 12 months before the current one
+        flags = prior_minimum < average - threshold
+        index = flags.index
+        if not isinstance(index, pd.PeriodIndex):
+            raise TypeError(f"Expected a PeriodIndex, got {type(index).__name__}")
+        runs: list[tuple[pd.Period, pd.Period]] = []  # (first, last) of each run of flagged months
+        start: pd.Period | None = None
+        for position, (period, flag) in enumerate(zip(index, flags, strict=True)):
+            if flag and start is None:
+                start = period
+            if start is not None and not flag:
+                runs.append((start, index[position - 1]))
+                start = None
+        if start is not None:
+            runs.append((start, index[-1]))
+        spans: list[dict[str, Any]] = [
+            {"xmin": first, "xmax": last, "color": SAHM_COLOUR, "alpha": SAHM_ALPHA} for first, last in runs
+        ]
+        if spans:
+            spans[0]["label"] = f"Growth > {threshold} percentage points over minimum through the year"
+        ax = line_plot(average, color=SAHM_LINE_COLOUR)
+        recent = {
+            name: ", ".join(str(x) for x in series.iloc[-SAHM_RHEADER_VALUES:].round(2))
+            for name, series in (("rate", rate), ("average", average), ("minimum", minimum))
+        }
+        finalise_plot(
+            ax,
+            title=f"Unemployment Rate: Rises over {threshold}pp Through the Year",
+            ylabel=PER_CENT_OF_LABOUR_FORCE,
+            y0=True,
+            axvspan=spans,
+            legend={"loc": "best", "fontsize": 8},
+            rfooter=release.source,
+            lfooter=SAHM_LFOOTER,
+            rheader=f"Last 3 UER: {recent['rate']};  "
+            f"Last 3m MA: {recent['average']};  "
+            f"Last 3m minimum: {recent['minimum']};  "
+            f"Forward headroom: {threshold - (average.iloc[-1] - minimum.iloc[-1]):.2f}",
+        )
         frame["Unemployment Rate 3 month MA"] = average
         frame[f"Prior 12 month minimum + {threshold}pp"] = prior_minimum + threshold
     line_plot_finalise(

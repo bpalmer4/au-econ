@@ -95,36 +95,41 @@ def _lfs_rate() -> pd.Series:
     return ra.select_one(data, meta, LFS_SELECTOR).dropna().rename("Labour Force Survey")
 
 
-def _june_pairs(
-    ces: pd.Series, modellers: pd.Series, window: tuple[int, int]
-) -> tuple[pd.DataFrame, pd.Period, str]:
-    """Pair the CES rate with the survey rate at June, inside the fitting window.
+@cache
+def _unemployment_rate() -> tuple[pd.Series, pd.DataFrame, dict[str, float]]:
+    """Splice the rate, survey first (cached; not for mutation): rate, splice report, fit statistics.
 
-    Both sides are taken at June because the CES count is an end-June snapshot; fitting it
-    against a financial-year average produces a spurious one-year lag. Returns the pairs, the
-    survey's first June and the survey's frequency string.
+    Before the Modellers' Database the survey rate is modelled from the CES rate: a straight
+    line is fitted from the CES rate to the survey rate over CALIBRATION_YEARS, applied to the
+    earlier CES years, and the annual June estimates are joined monthly without adding turns.
     """
+    modellers, ces = _modellers_rate(), _ces_rate()
     index = modellers.index
     if not isinstance(index, pd.PeriodIndex):
         raise TypeError(f"modellers must have a PeriodIndex, got {type(index).__name__}")
+
+    # pair the rates at June, inside the fitting window: the CES count is an end-June snapshot,
+    # and fitting it against a financial-year average produces a spurious one-year lag
     june = modellers[index.month == JUNE]
     paired = pd.DataFrame({"survey": june, "ces": ces}).dropna()
     paired_index = paired.index
     if not isinstance(paired_index, pd.PeriodIndex):
         raise TypeError(f"paired must have a PeriodIndex, got {type(paired_index).__name__}")
-    low, high = window
+    low, high = CALIBRATION_YEARS
     fitted = paired[(paired_index.year >= low) & (paired_index.year <= high)]
     if fitted.empty:
         raise ValueError(f"No overlapping June observations in {low}-{high} to calibrate on")
-    return fitted, june.index[0], index.freqstr
 
+    slope, intercept = np.polyfit(fitted["ces"], fitted["survey"], 1)
+    earlier = ces[ces.index < june.index[0]]
+    estimate = slope * earlier + intercept
+    span = pd.period_range(estimate.index[0], estimate.index[-1], freq=index.freqstr)
+    modelled = estimate.reindex(span).interpolate(method="linear").rename("Modelled from CES")
 
-def _backcast_stats(fitted: pd.DataFrame, slope: float, intercept: float, earlier: pd.Series) -> dict[str, float]:
-    """Summarise the CES-to-survey fit, and the CES range it is projected over."""
-    predicted = slope * fitted["ces"] + intercept
-    resid = fitted["survey"] - predicted
+    # the fit, and the CES range it is projected over
+    resid = fitted["survey"] - (slope * fitted["ces"] + intercept)
     total = ((fitted["survey"] - fitted["survey"].mean()) ** 2).sum()
-    return {
+    stats = {
         "slope": float(slope),
         "intercept": float(intercept),
         "r2": float(1 - (resid**2).sum() / total),
@@ -135,29 +140,6 @@ def _backcast_stats(fitted: pd.DataFrame, slope: float, intercept: float, earlie
         "projected_ces_min": float(earlier.min()),
         "projected_ces_max": float(earlier.max()),
     }
-
-
-def _backcast(ces: pd.Series, modellers: pd.Series) -> tuple[pd.Series, dict[str, float]]:
-    """Model the survey rate before the Modellers' Database from the CES rate.
-
-    A straight line is fitted from the CES rate to the survey rate over CALIBRATION_YEARS,
-    applied to the earlier CES years, and the annual June estimates are joined monthly
-    without adding turns. Returns the monthly estimate and the fit statistics.
-    """
-    fitted, first_june, freq = _june_pairs(ces, modellers, CALIBRATION_YEARS)
-    slope, intercept = np.polyfit(fitted["ces"], fitted["survey"], 1)
-    earlier = ces[ces.index < first_june]
-    estimate = slope * earlier + intercept
-    span = pd.period_range(estimate.index[0], estimate.index[-1], freq=freq)
-    monthly = estimate.reindex(span).interpolate(method="linear")
-    return monthly.rename("Modelled from CES"), _backcast_stats(fitted, slope, intercept, earlier)
-
-
-@cache
-def _unemployment_rate() -> tuple[pd.Series, pd.DataFrame, dict[str, float]]:
-    """Splice the rate, survey first (cached; not for mutation): rate, splice report, fit statistics."""
-    modellers = _modellers_rate()
-    modelled, stats = _backcast(_ces_rate(), modellers)
     rate, report = ra.splice([_lfs_rate(), modellers, modelled], rebase=False, name="Unemployment rate")
     return rate, report, stats
 

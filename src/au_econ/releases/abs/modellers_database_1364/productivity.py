@@ -96,7 +96,7 @@ def _sa(data: ModellersData, table: str, did: str) -> pd.Series:
 def _labour_growth(data: ModellersData) -> pd.Series:
     """Return year-on-year growth in GDP per hour worked."""
     labour_prod, _ = data.used["gdp_per_hour"]
-    return (labour_prod.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+    return ra.percent_change(labour_prod, QUARTERS_PER_YEAR).dropna()
 
 
 # --- charts
@@ -144,7 +144,7 @@ def labour_productivity(data: ModellersData) -> None:
         legend=LEGEND,
         **common(title, comparison),
     )
-    growth_comparison = (pd.DataFrame(productivity).pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+    growth_comparison = ra.percent_change(pd.DataFrame(productivity), QUARTERS_PER_YEAR).dropna()
     line_plot_finalise(
         growth_comparison,
         title="Labour Productivity Growth (YoY)",
@@ -156,7 +156,7 @@ def labour_productivity(data: ModellersData) -> None:
         **common("", growth_comparison),
     )
     for label, series in productivity.items():
-        growth = (series.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+        growth = ra.percent_change(series, QUARTERS_PER_YEAR).dropna()
         line_plot_finalise(
             pd.DataFrame({"Annual growth": growth, f"{HENDERSON_TERMS}-term HMA": hma(growth, HENDERSON_TERMS)}),
             title=f"Long-run Growth Trends: {label}",
@@ -181,7 +181,7 @@ def long_run_productivity(data: ModellersData) -> None:
         "axvline": {"x": junction, "color": "darkgrey", "linewidth": 0.75, "linestyle": "--"},
     }
     line_plot_finalise(index, title="GDP per Hour Worked: Long Run", ylabel=units, annotate=True, **common)
-    growth = ((index / index.shift(QUARTERS_PER_YEAR) - 1) * PERCENT).dropna()
+    growth = ra.percent_change(index, QUARTERS_PER_YEAR).dropna()
     line_plot_finalise(
         growth.rename("Year-ended growth"),
         title="GDP per Hour Worked: Long Run Annual Growth",
@@ -202,7 +202,7 @@ def mfp(data: ModellersData) -> None:
 
     l_norm, k_norm, y_norm = hours / hours.iloc[0], capital / capital.iloc[0], gdp / gdp.iloc[0]
     level = (y_norm / (l_norm**alpha * k_norm ** (1 - alpha)) * PERCENT).dropna()
-    growth = (level.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+    growth = ra.percent_change(level, QUARTERS_PER_YEAR).dropna()
     level_hp = pd.Series(hpfilter(level, lamb=HP_LAMBDA)[1], index=level.index)
     level_hma = hma(level, HENDERSON_TERMS)
     growth_hp = pd.Series(hpfilter(growth, lamb=HP_LAMBDA)[1], index=growth.index)
@@ -275,11 +275,9 @@ def gdp_decomposition(data: ModellersData) -> None:
 
     contributions = pd.DataFrame(
         {
-            "GDP Growth": gdp.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
-            "Labour Growth": (
-                (1 - alpha) * (labour_force.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT)
-            ).dropna(),
-            "Capital Growth": (alpha * (capital.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT)).dropna(),
+            "GDP Growth": ra.percent_change(gdp, QUARTERS_PER_YEAR),
+            "Labour Growth": ((1 - alpha) * ra.percent_change(labour_force, QUARTERS_PER_YEAR)).dropna(),
+            "Capital Growth": (alpha * ra.percent_change(capital, QUARTERS_PER_YEAR)).dropna(),
         }
     ).dropna()
     contributions["MFP Growth"] = (

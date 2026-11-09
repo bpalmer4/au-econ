@@ -237,25 +237,6 @@ def _nsdiffs(y: np.ndarray, m: int, d: int, max_big_d: int = 1, thresh: float = 
     return big_d
 
 
-def _neighbours(key: tuple[int, int, int, int], *, seasonal: bool) -> list[tuple[int, int, int, int]]:
-    """List the orders one step (+/-1) from key; the seasonal orders only for a seasonal model."""
-    p, q, big_p, big_q = key
-    steps = [
-        (p + 1, q, big_p, big_q),
-        (p - 1, q, big_p, big_q),
-        (p, q + 1, big_p, big_q),
-        (p, q - 1, big_p, big_q),
-    ]
-    if seasonal:
-        steps += [
-            (p, q, big_p + 1, big_q),
-            (p, q, big_p - 1, big_q),
-            (p, q, big_p, big_q + 1),
-            (p, q, big_p, big_q - 1),
-        ]
-    return steps
-
-
 def _hill_climb(
     fit: Callable[[tuple[int, int, int, int]], tuple[SARIMAXResults | None, float]],
     best: tuple[tuple[int, int, int, int], SARIMAXResults | None, float],
@@ -270,7 +251,22 @@ def _hill_climb(
     improved = True
     while improved:
         improved = False
-        for neighbour in _neighbours(best_key, seasonal=seasonal):
+        # the orders one step (+/-1) away; the seasonal orders only for a seasonal model
+        p, q, big_p, big_q = best_key
+        neighbours = [
+            (p + 1, q, big_p, big_q),
+            (p - 1, q, big_p, big_q),
+            (p, q + 1, big_p, big_q),
+            (p, q - 1, big_p, big_q),
+        ]
+        if seasonal:
+            neighbours += [
+                (p, q, big_p + 1, big_q),
+                (p, q, big_p - 1, big_q),
+                (p, q, big_p, big_q + 1),
+                (p, q, big_p, big_q - 1),
+            ]
+        for neighbour in neighbours:
             res, aic = fit(neighbour)
             if aic < best_aic:
                 best_key, best_res, best_aic = neighbour, res, aic

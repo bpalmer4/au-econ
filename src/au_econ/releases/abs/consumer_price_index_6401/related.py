@@ -189,6 +189,7 @@ HVT_LFOOTER = (
     "Before dashed line: CPI Indicator (trimmed mean Orig). "
 )
 HVT_JUNCTION_LINE = {"color": "darkgrey", "linestyle": "--", "linewidth": 1}
+ENDPOINT_ROUNDING = 1  # decimal places in the endpoint labels of inflation rates
 
 # Phillips curves
 PHILLIPS: dict[str, Request] = {
@@ -223,6 +224,7 @@ NGDP_HP_LAMBDA = 25_600
 NGDP_FLAT = 4.2  # fixed non-inflationary nominal benchmark (% pa)
 NGDP_GFC = pd.Period("2008Q3", freq="Q")  # nominal growth steps down after the GFC
 NGDP_PRE, NGDP_POST = 5.25, 3.25  # pre- and post-GFC nominal growth (% pa)
+NGDP_LOG_ROUNDING = 2  # decimal places in the endpoint labels of the log level chart
 
 # misery index
 MISERY_FROM = pd.Period("1959Q3", freq="Q").asfreq("M", how="start")
@@ -273,18 +275,8 @@ def _load(release: AbsRelease, request: Request) -> pd.Series:
         if not isinstance(series.index, pd.PeriodIndex):
             raise TypeError(f"Expected a PeriodIndex for {did!r}")
         periods = {"Q": QUARTERS_PER_YEAR, "M": MONTHS_PER_YEAR}[series.index.freqstr[0]]
-        series = series.pct_change(periods=periods) * PERCENT
+        series = ra.percent_change(series, periods)
     return series
-
-
-def _source(requests: dict[str, Request]) -> str:
-    """Return the rfooter naming each catalogue the requests draw on."""
-    return f"ABS: {', '.join(sorted({request[0] for request in requests.values()}))}"
-
-
-def _year_ended(series: pd.Series, periods: int) -> pd.Series:
-    """Return year-ended growth."""
-    return ((series / series.shift(periods) - 1) * PERCENT).dropna()
 
 
 def _pair_segments(release: AbsRelease, did: str) -> list[pd.Series]:
@@ -292,13 +284,7 @@ def _pair_segments(release: AbsRelease, did: str) -> list[pd.Series]:
     indicator, indicator_meta = _indicator()
     selector = {did: mc.did, "Australia ;": mc.did, "Index Numbers": mc.unit, ORIGINAL: mc.stype, "Month": mc.freq}
     new, old = ra.select([(release.data, release.meta, selector), (indicator, indicator_meta, selector)])
-    return [_year_ended(new, MONTHS_PER_YEAR), _year_ended(old, MONTHS_PER_YEAR)]
-
-
-def _pair_monthly(release: AbsRelease, did: str) -> pd.Series:
-    """Return year-ended growth spliced across the two monthly sources."""
-    spliced, _report = ra.splice(_pair_segments(release, did), rebase=False)
-    return spliced
+    return [ra.percent_change(new, MONTHS_PER_YEAR).dropna(), ra.percent_change(old, MONTHS_PER_YEAR).dropna()]
 
 
 def _pair_quarterly(did: str) -> pd.Series:
@@ -315,14 +301,6 @@ def _pair_quarterly(did: str) -> pd.Series:
     return ra.select_one(data, meta, selector)
 
 
-def _pair_long(release: AbsRelease, did: str) -> pd.Series:
-    """Return year-ended growth as one monthly line: current CPI, indicator, then the quarterly rates."""
-    spliced, _report = ra.splice(
-        [*_pair_segments(release, did), _pair_quarterly(did)], target="M", fill="interpolate", rebase=False
-    )
-    return spliced
-
-
 def _pair_charts(release: AbsRelease, title: str, concepts: dict[str, str]) -> None:
     """Draw a pair of CPI analytical series: monthly, with the quarterly overlay, and long run."""
     common: dict[str, Any] = {
@@ -332,13 +310,16 @@ def _pair_charts(release: AbsRelease, title: str, concepts: dict[str, str]) -> N
         "legend": {"loc": "best", "fontsize": "small"},
         "rfooter": PAIR_RFOOTER,
         "y0": True,
+        "rounding": ENDPOINT_ROUNDING,
     }
-    monthly = {label: _pair_monthly(release, did) for label, did in concepts.items()}
+    # year-ended growth spliced across the two monthly sources
+    monthly = {label: ra.splice(_pair_segments(release, did), rebase=False)[0] for label, did in concepts.items()}
     frame = pd.DataFrame(monthly)
     mg.multi_start(
         frame,
         function=mg.line_plot_finalise,
         starts=pair_starts,
+        annotate=True,
         lfooter=f"{PAIR_LFOOTER}{data_to(frame)}",
         **common,
     )
@@ -351,14 +332,24 @@ def _pair_charts(release: AbsRelease, title: str, concepts: dict[str, str]) -> N
         starts=pair_starts,
         color=OVERLAY_COLOURS,
         style=OVERLAY_STYLES,
+        annotate=[True, True, False, False],  # the quarterly lines end early
         tag="with-quarterly",
         lfooter=f"{OVERLAY_LFOOTER}{data_to(frame)}",
         **common,
     )
-    long_run = pd.DataFrame({label: _pair_long(release, did) for label, did in concepts.items()})
+    # one monthly line: current CPI, indicator, then the quarterly rates
+    long_run = pd.DataFrame(
+        {
+            label: ra.splice(
+                [*_pair_segments(release, did), _pair_quarterly(did)], target="M", fill="interpolate", rebase=False
+            )[0]
+            for label, did in concepts.items()
+        }
+    )
     mg.line_plot_finalise(
         long_run,
         tag="long-run",
+        annotate=True,
         lfooter=f"{LONG_LFOOTER}{data_to(long_run)}",
         **common,
     )
@@ -375,30 +366,6 @@ def _regression(ax: Axes, frame: pd.DataFrame, label: str, *, degree: int, **sty
     model = np.poly1d(np.polyfit(x, y, degree))
     line = np.linspace(x.min(), x.max(), REGRESSION_POINTS)
     ax.plot(line, model(line), label=label or "_nolegend_", **style)
-
-
-def _phillips_data(release: AbsRelease) -> dict[str, pd.Series]:
-    """Return trimmed mean and household deflator annual growth, and the quarterly unemployment rate."""
-    return {label: _load(release, request) for label, request in PHILLIPS.items()}
-
-
-def _consecutive_runs(mask: pd.Series, min_length: int) -> list[tuple[Any, Any]]:
-    """Return (start, end) index pairs where the mask is True for at least min_length periods."""
-    mask = mask.fillna(False).astype(bool)
-    block_id = (mask != mask.shift()).cumsum()
-    return [
-        (block.index[0], block.index[-1])
-        for _, block in mask.groupby(block_id)
-        if block.iloc[0] and len(block) >= min_length
-    ]
-
-
-def _modellers_unemployment_rate() -> pd.Series:
-    """Return the quarterly unemployment rate from the Modellers' Database: unemployed over labour force."""
-    data, meta = _read(MODELLERS, MODELLERS_TABLE)
-    _, unemployed_id, _ = ra.find_abs_id(meta, {MODELLERS_TABLE: mc.table, "Total unemployed ;": mc.did})
-    _, labour_force_id, _ = ra.find_abs_id(meta, {MODELLERS_TABLE: mc.table, "Total labour force ;": mc.did})
-    return (data[unemployed_id] / data[labour_force_id]) * PERCENT
 
 
 def _key_aggregate(did: str) -> pd.Series:
@@ -424,9 +391,9 @@ def long_run_headline(release: AbsRelease) -> None:
     )
     spliced, _report = ra.splice(
         [
-            _year_ended(monthly, MONTHS_PER_YEAR),
-            _year_ended(indicator_monthly, MONTHS_PER_YEAR),
-            _year_ended(quarterly, QUARTERS_PER_YEAR),
+            ra.percent_change(monthly, MONTHS_PER_YEAR).dropna(),
+            ra.percent_change(indicator_monthly, MONTHS_PER_YEAR).dropna(),
+            ra.percent_change(quarterly, QUARTERS_PER_YEAR).dropna(),
         ],
         rebase=False,
         name="Headline CPI Y/Y (spliced)",
@@ -435,6 +402,8 @@ def long_run_headline(release: AbsRelease) -> None:
         spliced,
         title="Australian Headline CPI: Year-ended Inflation (spliced, 1949 to current)",
         ylabel="Annual % change",
+        annotate=True,
+        rounding=ENDPOINT_ROUNDING,
         rfooter=PAIR_RFOOTER,
         lfooter=f"{AUSTRALIA}Original series. Monthly (new CPI + indicator) spliced over quarterly. "
         f"{data_to(spliced)}",
@@ -456,7 +425,7 @@ def measures(release: AbsRelease) -> None:
         axhspan=ANNUAL_CPI_TARGET_RANGE,
         legend={"loc": "best", "ncol": 3, "fontsize": "xx-small"},
         lfooter=f"{MEASURES_LFOOTER}{data_to(frame)}",
-        rfooter=_source(MULTI_MEASURE),
+        rfooter=f"ABS: {', '.join(sorted({request[0] for request in MULTI_MEASURE.values()}))}",
         color=list(TEN_COLOURS),
         y0=True,
     )
@@ -508,6 +477,8 @@ def headline_vs_trimmed(release: AbsRelease) -> None:
         frame,
         title="Australian Monthly CPI: Headline v Trimmed Mean",
         ylabel="CPI (annual % change)",
+        annotate=True,
+        rounding=ENDPOINT_ROUNDING,
         axhspan=ANNUAL_CPI_TARGET_RANGE,
         axvline=HVT_JUNCTION_LINE | {"x": junction},
         legend={"loc": "best", "fontsize": "small"},
@@ -519,7 +490,7 @@ def headline_vs_trimmed(release: AbsRelease) -> None:
 
 def phillips_curves(release: AbsRelease) -> None:
     """Phillips curves since 2021 for trimmed mean and household deflator inflation; stylised curves by period."""
-    data = _phillips_data(release)
+    data = {label: _load(release, request) for label, request in PHILLIPS.items()}
     unemployment = ra.monthly_to_qtly(data["Unemployment rate monthly (SA)"])
     trimmed_mean = data["Qrtly Trimmed Mean CPI (SA)"]
     common: dict[str, Any] = {
@@ -594,8 +565,8 @@ def nominal_gdp(_release: AbsRelease) -> None:
     rgdp_pc = _key_aggregate("GDP per capita: Chain volume measures ;")
 
     # growth against three non-inflationary benchmarks
-    actual = (ngdp_pc.pct_change(QUARTERS_PER_YEAR) * PERCENT).rename("Nominal GDP per capita growth (YoY)")
-    real_growth = (rgdp_pc.pct_change(QUARTERS_PER_YEAR) * PERCENT).dropna()
+    actual = ra.percent_change(ngdp_pc, QUARTERS_PER_YEAR).rename("Nominal GDP per capita growth (YoY)")
+    real_growth = ra.percent_change(rgdp_pc, QUARTERS_PER_YEAR).dropna()
     real_growth = real_growth[real_growth.index >= NGDP_FROM]
     flat = pd.Series(NGDP_FLAT, index=real_growth.index, name=f"Flat trend ({NGDP_FLAT:.1f}%)")
     x = np.arange(len(real_growth))
@@ -642,6 +613,8 @@ def nominal_gdp(_release: AbsRelease) -> None:
         style=["-", "--", "-."],
         title="Nominal GDP per Capita: Log Level vs Projected Paths",
         ylabel="log($ per capita)",
+        annotate=True,
+        rounding=NGDP_LOG_ROUNDING,
         legend={"loc": "lower right", "fontsize": "x-small"},
         rfooter="ABS: 5206.0",
         lfooter=f"{AUSTRALIA}Seasonally adjusted. Paths anchored at 1993Q1. {data_to(log_ngdp)}",
@@ -650,8 +623,15 @@ def nominal_gdp(_release: AbsRelease) -> None:
 
 def misery_index(release: AbsRelease) -> None:
     """Unemployment plus CPI inflation since 1959, with periods of stagflation shaded."""
+    # before the monthly series: the Modellers' Database quarterly rate, unemployed over labour force
+    modellers, modellers_meta = _read(MODELLERS, MODELLERS_TABLE)
+    _, unemployed_id, _ = ra.find_abs_id(modellers_meta, {MODELLERS_TABLE: mc.table, "Total unemployed ;": mc.did})
+    _, labour_force_id, _ = ra.find_abs_id(
+        modellers_meta, {MODELLERS_TABLE: mc.table, "Total labour force ;": mc.did}
+    )
+    quarterly_rate = modellers[unemployed_id] / modellers[labour_force_id] * PERCENT
     unemployment = _load(release, PHILLIPS["Unemployment rate monthly (SA)"]).combine_first(
-        ra.qtly_to_monthly(_modellers_unemployment_rate())
+        ra.qtly_to_monthly(quarterly_rate)
     )
     frame = pd.DataFrame(
         {"Unemployment rate": unemployment, "CPI inflation (annual)": ra.qtly_to_monthly(long_headline(release))}
@@ -666,6 +646,14 @@ def misery_index(release: AbsRelease) -> None:
     stagflation = (frame["CPI inflation (annual)"] >= STAGFLATION_INFLATION) & (
         frame["Unemployment rate"] >= STAGFLATION_UR_MULTIPLE * ur_min
     )
+    # (start, end) of each stagflation run lasting at least STAGFLATION_MIN_RUN months
+    stagflation = stagflation.fillna(False).astype(bool)
+    block_id = (stagflation != stagflation.shift()).cumsum()
+    runs = [
+        (block.index[0], block.index[-1])
+        for _, block in stagflation.groupby(block_id)
+        if block.iloc[0] and len(block) >= STAGFLATION_MIN_RUN
+    ]
     shade = [
         {
             "xmin": start,
@@ -675,13 +663,15 @@ def misery_index(release: AbsRelease) -> None:
             "zorder": 0,
             "label": "Periods of stagflation" if i == 0 else "_nolegend_",
         }
-        for i, (start, end) in enumerate(_consecutive_runs(stagflation, STAGFLATION_MIN_RUN))
+        for i, (start, end) in enumerate(runs)
     ]
     common: dict[str, Any] = {
         "data": frame,
         "title": "Australian Misery Index: Unemployment + CPI Inflation",
         "ylabel": "Per cent",
         "width": [1.25, 1.25, 2.0],
+        "annotate": True,
+        "rounding": ENDPOINT_ROUNDING,
         "legend": {"loc": "best", "fontsize": "small"},
         "lfooter": f"{AUSTRALIA}UR seas adj, CPI orig. "
         f"Stagflation: inflation ≥ 5% & UR ≥ 1.75× 10-yr min, 12+ mo. {data_to(frame)}",

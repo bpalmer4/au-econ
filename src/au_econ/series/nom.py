@@ -211,14 +211,6 @@ def get_nom_by_age() -> tuple[DataFrame, Period]:
 
 
 # --- total population growth, forward
-def _erp_annual_change() -> Series:
-    """Return the published annual ERP change ('000), Original."""
-    data, meta = _table()
-    selector = {NOM_TABLE: mc.table, NOM_STYPE: mc.stype, ERP_CHANGE_DID: mc.did, ERP_CHANGE_UNIT: mc.unit}
-    _, series_id, _units = ra.find_abs_id(meta, selector, verbose=False)
-    return data[series_id].dropna()
-
-
 @cache
 def _population_growth_proxy() -> tuple[Series, Series, Period, Period]:
     """Build the forward proxy for annual ERP growth (cached; not for mutation).
@@ -232,7 +224,10 @@ def _population_growth_proxy() -> tuple[Series, Series, Period, Period]:
     proxy = (nom_proxy + natural_increase).dropna()
     if proxy.empty:
         raise ValueError("Population growth proxy is empty: check the NOM proxy and natural increase")
-    return proxy, _erp_annual_change(), last_official, last_complete
+    data, meta = _table()  # the published annual ERP change ('000), Original
+    selector = {NOM_TABLE: mc.table, NOM_STYPE: mc.stype, ERP_CHANGE_DID: mc.did, ERP_CHANGE_UNIT: mc.unit}
+    _, series_id, _units = ra.find_abs_id(meta, selector, verbose=False)
+    return proxy, data[series_id].dropna(), last_official, last_complete
 
 
 def get_population_growth_proxy() -> tuple[Series, Series, Period, Period]:

@@ -84,8 +84,8 @@ def fix_title(title: str, lfooter: str) -> tuple[str, str]:
     return title, lfooter
 
 
-def _sa_and_trend(release: AbsRelease, did: str) -> tuple[pd.DataFrame, str, str]:
-    """Return the seasonally adjusted and trend series for a description, with units and full description."""
+def _seastrend(release: AbsRelease, did: str, *, dropna: bool) -> None:
+    """Chart a description's seasonally adjusted and trend series, full history and recent."""
     meta = release.meta
     frame = pd.DataFrame()
     units = found_did = ""
@@ -97,12 +97,6 @@ def _sa_and_trend(release: AbsRelease, did: str) -> tuple[pd.DataFrame, str, str
         row = found.iloc[0]
         units, found_did = row[mc.unit], row[mc.did]
         frame[series_type] = release.data[row[mc.table]][row[mc.id]]
-    return frame, units, found_did
-
-
-def _seastrend(release: AbsRelease, did: str, *, dropna: bool) -> None:
-    """Chart a description's seasonally adjusted and trend series, full history and recent."""
-    frame, units, found_did = _sa_and_trend(release, did)
     frame, units = ra.recalibrate(frame.dropna(how="all") if dropna else frame, units)
     title, lfooter = fix_title(found_did, "Australia. ")
     multi_start(

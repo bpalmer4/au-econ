@@ -215,7 +215,7 @@ def headlines(data: GfsData) -> None:
 def cw_growth(data: GfsData) -> None:
     """Chart year-on-year growth in Commonwealth revenue and expenses."""
     for item in (REVENUE, EXPENSES):
-        growth = (data.operating[CW][item].pct_change() * PERCENT).dropna().to_frame(name="YoY growth")
+        growth = ra.percent_change(data.operating[CW][item], 1).dropna().to_frame(name="YoY growth")
         mg.bar_plot_finalise(
             growth,
             title=f"Commonwealth GFS: {item}, Year-on-Year Growth",

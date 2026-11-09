@@ -36,20 +36,6 @@ REVISED = (
 )
 
 
-# --- helpers
-def _prints(did: str, stype: str) -> tuple[pd.DataFrame, str]:
-    """Return one series from each of the latest prints of the key aggregates table, newest first."""
-    revisions, units = pd.DataFrame(), ""
-    history = None
-    for _ in range(PRINTS):
-        data, meta = ra.read_abs_cat(CATALOGUE, single_excel_only=KEY_AGGS, history=history)
-        table, series_id, units = ra.find_abs_id(meta, {did: mc.did, stype: mc.stype})
-        last = data[table].index[-1]
-        revisions[f"ABS print for {last.strftime('%Y-%b')}"] = data[table][series_id]
-        history = (last - 1).strftime("%b-%Y").lower()  # the print a quarter earlier
-    return revisions, units
-
-
 # --- charts
 def revisions(release: AbsRelease) -> None:
     """Revisions across the latest six prints, and to the population they imply."""
@@ -64,7 +50,16 @@ def revisions(release: AbsRelease) -> None:
     captured = {}
     with chart_subdir(SUBDIR):
         for did in REVISED:
-            prints, units = ra.recalibrate(*_prints(did, stype))
+            # the series from each of the latest prints of the key aggregates table, newest first
+            prints, units = pd.DataFrame(), ""
+            history = None
+            for _ in range(PRINTS):
+                data, meta = ra.read_abs_cat(CATALOGUE, single_excel_only=KEY_AGGS, history=history)
+                table, series_id, units = ra.find_abs_id(meta, {did: mc.did, stype: mc.stype})
+                last = data[table].index[-1]
+                prints[f"ABS print for {last.strftime('%Y-%b')}"] = data[table][series_id]
+                history = (last - 1).strftime("%b-%Y").lower()  # the print a quarter earlier
+            prints, units = ra.recalibrate(prints, units)
             captured[did] = prints
             suffix = " Q/Q growth" if "Percentage changes" in did else ""
             revision_plot_finalise(

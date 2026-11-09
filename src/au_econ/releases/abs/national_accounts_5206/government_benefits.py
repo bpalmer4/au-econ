@@ -44,13 +44,6 @@ BENEFITS = "Total personal benefits payments ;"
 
 
 # --- helpers
-def _benefits_title(description: str) -> str:
-    """Shorten a social assistance description for a chart title."""
-    for published, short in TITLE_PREFIXES:
-        description = description.replace(published, short)
-    return description.replace(" ;", "")
-
-
 def _with_trend(data: pd.Series, title: str, source: str) -> None:
     """Draw a per cent of GDP series with its Henderson trend."""
     line_plot_finalise(
@@ -82,7 +75,10 @@ def benefits(release: AbsRelease) -> None:
             series = series.dropna()
             share = series / gdp * PERCENT
             series, units = ra.recalibrate(series, f"{row[mc.unit]} / Quarter")
-            title = _benefits_title(row[mc.did])
+            title = row[mc.did]  # the social assistance description, shortened
+            for published, short in TITLE_PREFIXES:
+                title = title.replace(published, short)
+            title = title.replace(" ;", "")
             line_plot_finalise(
                 series,
                 plot_from=BENEFITS_FROM,

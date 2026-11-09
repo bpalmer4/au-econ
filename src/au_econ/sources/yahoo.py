@@ -27,23 +27,6 @@ def get_close(ticker: str, start: str | None) -> pd.Series:
     return close
 
 
-def _contract_months(n_months: int) -> list[pd.Period]:
-    """Candidate contract months, from the current month forward.
-
-    Not every candidate is listed: a root's front contract expires before its delivery
-    month (Brent settles about two months ahead of it), and Yahoo's monthly strip ends
-    early for some roots (Brent: about 16 months, then only June and December). Probing
-    from the current month with slack lets get_forward_curve() skip expired fronts.
-    """
-    start = pd.Period(pd.Timestamp.today(), freq="M")
-    return [start + i for i in range(n_months + CURVE_PROBE_SLACK)]
-
-
-def _contract_symbol(root: str, month: pd.Period) -> str:
-    """Return a dated NYMEX contract's Yahoo symbol, e.g. CLX26.NYM."""
-    return f"{root}{MONTH_CODES[month.month - 1]}{month.year % 100:02d}.NYM"
-
-
 def get_forward_curve(root: str, n_months: int) -> pd.DataFrame:
     """Return the latest close ("price") and trade date ("date") of up to n_months consecutive live contracts.
 
@@ -56,14 +39,18 @@ def get_forward_curve(root: str, n_months: int) -> pd.DataFrame:
     yf_logger = logging.getLogger("yfinance")
     level = yf_logger.level
     yf_logger.setLevel(logging.CRITICAL)
+    # candidate contract months, from the current month forward. Not every candidate is listed:
+    # a root's front contract expires before its delivery month (Brent settles about two months
+    # ahead of it), and Yahoo's monthly strip ends early for some roots (Brent: about 16 months,
+    # then only June and December); probing from the current month with slack skips expired fronts
+    this_month = pd.Period(pd.Timestamp.today(), freq="M")
     try:
-        for month in _contract_months(n_months):
+        for month in (this_month + i for i in range(n_months + CURVE_PROBE_SLACK)):
             if len(records) >= n_months:
                 break
+            symbol = f"{root}{MONTH_CODES[month.month - 1]}{month.year % 100:02d}.NYM"  # e.g. CLX26.NYM
             try:
-                history: pd.DataFrame | None = yf.Ticker(_contract_symbol(root, month)).history(
-                    period=RECENT_HISTORY
-                )
+                history: pd.DataFrame | None = yf.Ticker(symbol).history(period=RECENT_HISTORY)
             except KeyError, ValueError, OSError:
                 history = None
             if history is None or len(history) == 0:

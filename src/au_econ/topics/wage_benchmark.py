@@ -46,18 +46,15 @@ class BenchmarkData:
     window: tuple[pd.Period, pd.Period]
 
 
-def _annual_growth(index: pd.Series) -> pd.Series:
-    """Through-the-year growth in per cent, matched on the period index."""
-    year_earlier = index.copy()
-    year_earlier.index = pd.PeriodIndex(index.index).shift(QUARTERS_PER_YEAR)
-    return ((index / year_earlier - 1) * PERCENT).dropna()
-
-
 def fetch() -> BenchmarkData:
     """Fetch WPI by sector, the productivity trend and the unemployment rate."""
-    growth = pd.DataFrame(
-        {sector: _annual_growth(get_wage_index(measure)[0]) for sector, measure in SECTORS.items()}
-    )
+    by_sector = {}
+    for sector, measure in SECTORS.items():  # through-the-year growth, matched on the period index
+        index = get_wage_index(measure)[0]
+        year_earlier = index.copy()
+        year_earlier.index = pd.PeriodIndex(index.index).shift(QUARTERS_PER_YEAR)
+        by_sector[sector] = ((index / year_earlier - 1) * PERCENT).dropna()
+    growth = pd.DataFrame(by_sector)
     if growth.dropna().empty:
         raise ValueError("No WPI growth to chart")
     trend, _units = get_productivity_trend()
@@ -72,18 +69,14 @@ def fetch() -> BenchmarkData:
 
 
 # --- helpers
-def _correlation_note(data: BenchmarkData) -> str:
-    """Left-footer note: private pay tracks unemployment more closely than public."""
+def _plot(data: BenchmarkData, sector: str, *, title: str, label: str) -> None:
+    frame = pd.DataFrame({label: data.growth[sector], BENCHMARK: data.benchmark}).dropna()
     start, end = data.window
     r = data.correlation
-    return (
+    correlation_note = (  # private pay tracks unemployment more closely than public
         f"Private pay tracks unemployment more closely (corr. {r['private']:.2f} vs "
         f"{r['public']:.2f} public, {start.year}-{end.year}). "
     )
-
-
-def _plot(data: BenchmarkData, sector: str, *, title: str, label: str) -> None:
-    frame = pd.DataFrame({label: data.growth[sector], BENCHMARK: data.benchmark}).dropna()
     ax = mg.fill_between_plot(frame[[BENCHMARK, label]], alpha=0.2, label="Wages above or below the benchmark")
     mg.line_plot(frame, ax=ax, style=["-", "--"], annotate=True, rounding=1)
     mg.finalise_plot(
@@ -92,7 +85,7 @@ def _plot(data: BenchmarkData, sector: str, *, title: str, label: str) -> None:
         ylabel="Per cent per year",
         legend={"loc": "best", "fontsize": "small"},
         lheader=LHEADER,
-        lfooter=f"Australia. Seasonally adjusted. {_correlation_note(data)}",
+        lfooter=f"Australia. Seasonally adjusted. {correlation_note}",
         rfooter=SOURCE,
     )
 

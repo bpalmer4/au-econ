@@ -152,29 +152,14 @@ def fetch() -> dict[str, Panel]:
         gdp, cpi, ur = _resolve(country.gdp), _resolve(country.cpi), _resolve(country.ur)
         print(f"{name:14s}  GDP={len(gdp):>4}  CPI={len(cpi):>4}  UR={len(ur):>4}")
         panels[name] = Panel(
-            gdp_qoq=gdp.pct_change() * 100,
-            cpi_yoy=cpi.pct_change(QUARTERS_PER_YEAR) * 100,
+            gdp_qoq=ra.percent_change(gdp, 1),
+            cpi_yoy=ra.percent_change(cpi, QUARTERS_PER_YEAR),
             ur=ur,
         )
     return panels
 
 
 # --- helpers
-def _recession_spans(gdp_qoq: pd.Series) -> list[tuple[pd.Period, pd.Period]]:
-    """Return (start, end) pairs, inclusive, for runs of MIN_RECESSION_RUN+ negative quarters."""
-    growth = gdp_qoq.dropna()
-    spans: list[tuple[pd.Period, pd.Period]] = []
-    run_start: int | None = None
-    for i, negative in enumerate([*(growth < 0).tolist(), False]):  # sentinel closes a final run
-        if negative and run_start is None:
-            run_start = i
-        elif not negative and run_start is not None:
-            if i - run_start >= MIN_RECESSION_RUN:
-                spans.append((growth.index[run_start], growth.index[i - 1]))
-            run_start = None
-    return spans
-
-
 def _window(series: pd.Series, end: pd.Period | None) -> pd.Series | None:
     """Slice to the window (and the country's own end), or None if nothing is left."""
     upper = WINDOW_END if end is None else min(WINDOW_END, end)
@@ -188,7 +173,17 @@ def _plot_country(name: str, panel: Panel) -> list[tuple[pd.Period, pd.Period]]:
     country = COUNTRIES[name]
     cap_suffix = "" if country.end is None else f" (to {country.end})"
     gdp_qoq = _window(panel.gdp_qoq, country.end)
-    spans = _recession_spans(gdp_qoq) if gdp_qoq is not None else []
+    # (start, end) pairs, inclusive, for runs of MIN_RECESSION_RUN+ negative quarters
+    spans: list[tuple[pd.Period, pd.Period]] = []
+    growth = gdp_qoq.dropna() if gdp_qoq is not None else pd.Series(dtype=float)
+    run_start: int | None = None
+    for i, negative in enumerate([*(growth < 0).tolist(), False]):  # sentinel closes a final run
+        if negative and run_start is None:
+            run_start = i
+        elif not negative and run_start is not None:
+            if i - run_start >= MIN_RECESSION_RUN:
+                spans.append((growth.index[run_start], growth.index[i - 1]))
+            run_start = None
     shading = [{"xmin": start, "xmax": end + 1, **SHADING} for start, end in spans] or None
 
     full = pd.period_range(WINDOW_START, WINDOW_END, freq="Q")  # every figure spans the whole window

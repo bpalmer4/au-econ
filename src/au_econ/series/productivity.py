@@ -12,7 +12,8 @@ The log index is joined by a straight line from 2019Q4 to 2023Q1, the two quarte
 which it stood at the same level; the trend is then the compound annual growth rate in the
 annual-average level over a trailing window. Trailing, so a published value never revises (unlike a
 Henderson or HP trend at the sample end); annual averages, so quarterly noise at the two
-ends of a short window does not swing it.
+ends of a short window does not swing it. covid_flattened_trend() applies the same
+calculation to any quarterly productivity index.
 """
 
 import io
@@ -64,22 +65,6 @@ def _op8_hours() -> pd.Series:
     return pd.Series(hours[keep].to_numpy(), index=index, name="Aggregate weekly hours")
 
 
-def _derived_productivity() -> pd.Series:
-    """Return real GDP per aggregate weekly hour, quarterly, on an arbitrary scale.
-
-    The August hours are interpolated (cubic) onto quarters; dividing seasonally adjusted GDP
-    by unadjusted hours leaves a level offset that the splice's rebase removes.
-    """
-    gdp, _units = get_gdp("CVM", "SA")
-    hours = _op8_hours()
-    quarters = pd.period_range(hours.index[0], hours.index[-1], freq="Q")
-    gapped = hours.reindex(quarters)
-    gapped.index = quarters.to_timestamp()
-    filled = gapped.interpolate(method="cubic")
-    filled.index = quarters
-    return (gdp / filled).dropna().rename("Derived productivity")
-
-
 @cache
 def _productivity_index() -> tuple[pd.Series, pd.DataFrame]:
     """Splice GDP per hour worked back to 1966, with the splice report (cached; not for mutation)."""
@@ -87,7 +72,18 @@ def _productivity_index() -> tuple[pd.Series, pd.DataFrame]:
     published = ra.select_one(
         data, meta, {KEY_AGGREGATES: mc.table, PRODUCTIVITY_DID: mc.did, SA: mc.stype}
     ).dropna()
-    spliced, report = ra.splice([published, _derived_productivity()], rebase=True)
+    # real GDP per aggregate weekly hour, on an arbitrary scale: the August hours are interpolated
+    # (cubic) onto quarters; dividing seasonally adjusted GDP by unadjusted hours leaves a level
+    # offset that the splice's rebase removes
+    gdp, _units = get_gdp("CVM", "SA")
+    hours = _op8_hours()
+    quarters = pd.period_range(hours.index[0], hours.index[-1], freq="Q")
+    gapped = hours.reindex(quarters)
+    gapped.index = quarters.to_timestamp()
+    filled = gapped.interpolate(method="cubic")
+    filled.index = quarters
+    derived = (gdp / filled).dropna().rename("Derived productivity")
+    spliced, report = ra.splice([published, derived], rebase=True)
     return spliced.rename("GDP per hour worked"), report
 
 
@@ -102,10 +98,8 @@ def get_productivity_splice_report() -> pd.DataFrame:
     return _productivity_index()[1].copy()
 
 
-@cache
-def _productivity_trend(years: int) -> pd.Series:
-    """Trend growth in GDP per hour worked, COVID swing flattened (cached; not for mutation)."""
-    index, _units, _stype = get_productivity_index()
+def covid_flattened_trend(index: pd.Series, years: int = TREND_YEARS) -> pd.Series:
+    """Return compound annual growth in the annual-average level of a quarterly index, COVID swing flattened."""
     log_level = np.log(index) * LOG_POINTS
     start, end = pd.Period(COVID_FLAT_FROM, freq="Q"), pd.Period(COVID_FLAT_TO, freq="Q")
     log_level.loc[(log_level.index > start) & (log_level.index < end)] = np.nan
@@ -113,7 +107,14 @@ def _productivity_trend(years: int) -> pd.Series:
     annual = flat.rolling(QUARTERS_PER_YEAR).mean()
     log_rate = annual.diff(years * QUARTERS_PER_YEAR) / years
     cagr = (np.exp(log_rate / LOG_POINTS) - 1) * PERCENT
-    return cagr.dropna().rename("Productivity trend")
+    return cagr.dropna()
+
+
+@cache
+def _productivity_trend(years: int) -> pd.Series:
+    """Trend growth in GDP per hour worked, COVID swing flattened (cached; not for mutation)."""
+    index, _units, _stype = get_productivity_index()
+    return covid_flattened_trend(index, years).rename("Productivity trend")
 
 
 def get_productivity_trend(years: int = TREND_YEARS) -> tuple[pd.Series, str]:

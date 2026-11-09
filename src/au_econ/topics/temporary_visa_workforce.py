@@ -111,8 +111,21 @@ def _migration_block(
     return frame.loc[keep.to_numpy()].dropna(how="all")
 
 
-def _nom_by_pathway() -> pd.DataFrame:
-    """Net overseas migration (arrivals less departures) by visa pathway, financial years."""
+def fetch() -> VisaData:
+    """Fetch the visa stock and NOM once; estimate the working stock; report the latest quarter."""
+    stock, stock_date = homeaffairs.get_visa_stock()
+    working = stock.copy()
+    for visa_class in working.columns:
+        working[visa_class] = working[visa_class] * EMPLOYMENT_RATE.get(visa_class, 0.0)
+    latest = stock.index[-1]
+    print(f"Visa stock at {latest}:")
+    print(stock.iloc[-1].sort_values(ascending=False).map(lambda x: f"{x:>12,.0f}"))
+    print(f"\nEstimated working stock at {latest}:")
+    print(working.iloc[-1].sort_values(ascending=False).map(lambda x: f"{x:>12,.0f}"))
+    print(f"\nTotal visa stock:    {stock.iloc[-1].sum():>14,.0f}")
+    print(f"Total working stock: {working.iloc[-1].sum():>14,.0f}")
+
+    # net overseas migration (arrivals less departures) by visa pathway, financial years
     url = latest_data_cube_url(MIGRATION_RELEASE, MIGRATION_CUBE)
     print(f"Overseas migration workbook: {url.rsplit('/', 1)[-1]}")
     raw = pd.read_excel(io.BytesIO(get_data_cube(url)), sheet_name=MIGRATION_SHEET, header=None)
@@ -127,35 +140,19 @@ def _nom_by_pathway() -> pd.DataFrame:
     pathways = pd.DataFrame(index=nom.columns)
     for label, rows in PATHWAYS.items():
         pathways[label] = nom.loc[rows].sum() if len(rows) > 1 else nom.loc[rows[0]]
-    return pathways
-
-
-def fetch() -> VisaData:
-    """Fetch the visa stock and NOM once; estimate the working stock; report the latest quarter."""
-    stock, stock_date = homeaffairs.get_visa_stock()
-    working = stock.copy()
-    for visa_class in working.columns:
-        working[visa_class] = working[visa_class] * EMPLOYMENT_RATE.get(visa_class, 0.0)
-    latest = stock.index[-1]
-    print(f"Visa stock at {latest}:")
-    print(stock.iloc[-1].sort_values(ascending=False).map(lambda x: f"{x:>12,.0f}"))
-    print(f"\nEstimated working stock at {latest}:")
-    print(working.iloc[-1].sort_values(ascending=False).map(lambda x: f"{x:>12,.0f}"))
-    print(f"\nTotal visa stock:    {stock.iloc[-1].sum():>14,.0f}")
-    print(f"Total working stock: {working.iloc[-1].sum():>14,.0f}")
-    return VisaData(visa_stock=stock, working=working, nom=_nom_by_pathway(), stock_date=stock_date)
+    return VisaData(visa_stock=stock, working=working, nom=pathways, stock_date=stock_date)
 
 
 def _stock_data_to(data: VisaData) -> str:
     """Footer note giving the latest visa stock's actual date."""
-    return f"Data to {data.stock_date.strftime('%-d %b %Y')}."
+    return f"Data to {data.stock_date.strftime('%d %b %Y')}."
 
 
 def _incomplete_quarter(data: VisaData) -> str:
     """Header note when the latest stock falls before its quarter's end (its bar is labelled by quarter)."""
     if data.stock_date.is_quarter_end:
         return ""  # an empty header draws nothing
-    return f"Final quarter incomplete: stock at {data.stock_date.strftime('%-d %b %Y')}."
+    return f"Final quarter incomplete: stock at {data.stock_date.strftime('%d %b %Y')}."
 
 
 # --- charts

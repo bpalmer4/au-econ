@@ -28,15 +28,6 @@ SUBDIR = "GVA-by-industry"
 PERCENT = 100
 
 
-# --- helpers
-def _title(description: str) -> str:
-    """Return the chart title for an industry: its ANZSIC code where the description ends without one."""
-    title = description.replace(" ;", "").strip()
-    if not title.endswith(")"):
-        title = re.sub(r"^[^\(]+\(", "(", title)
-    return f" GVA: {title}"
-
-
 # --- charts
 def gva_by_industry(release: AbsRelease) -> None:
     """Each industry's gross value added (chain volume measures): level, and as a per cent of GDP."""
@@ -50,7 +41,11 @@ def gva_by_industry(release: AbsRelease) -> None:
         for _, row in rows.iterrows():
             series, units = ra.recalibrate(data[row[mc.id]].dropna(), f"{row[mc.unit]}  / Quarter")
             lfooter = f"{AUSTRALIA}{SA_NOTE}{CVM_NOTE}GVA = gross value added. {data_to(series)}"
-            title = _title(row[mc.did])
+            # the industry's ANZSIC code where the description ends without one
+            industry = row[mc.did].replace(" ;", "").strip()
+            if not industry.endswith(")"):
+                industry = re.sub(r"^[^\(]+\(", "(", industry)
+            title = f" GVA: {industry}"
             multi_start(
                 series,
                 starts=quarterly_plot_times,

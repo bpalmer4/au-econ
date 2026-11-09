@@ -46,6 +46,7 @@ dependencies = [
     "curl-cffi>=0.15.0",
     "defusedxml>=0.7.1",
     "types-defusedxml>=0.7.0.20260504",
+    "adjusttext>=1.4.0",
 ]
 
 [build-system]

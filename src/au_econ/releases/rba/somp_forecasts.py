@@ -306,34 +306,34 @@ class SompData:
 
 
 # --- data
-def _clean(table: pd.DataFrame) -> pd.DataFrame:
-    """Index a raw SOMP table by subject, with numbers (fractions resolved) for the forecasts."""
-    table = table.set_index(table.columns[0])
-    table.index.name = "Index"
-    for col in table.columns:
-        text = table[col].astype(str)
-        for symbol, replacement in FRACTIONS.items():
-            text = text.str.replace(symbol, replacement)
-        table[col] = pd.to_numeric(text, errors="coerce")
-    table = table.dropna(how="all", axis="index")  # section headings, from Feb 2024
-    table.index = table.index.str.replace(FOOTNOTE_MARKER, "", regex=True).str.title()
-    return table
-
-
 def _somp_reports() -> dict[str, pd.DataFrame]:
     """Each SOMP forecast table so far, keyed by report quarter (e.g. "2026Q3")."""
     now = datetime.now(tz=ZoneInfo(LOCAL_TIME))
     last_year, last_quarter = now.year, (now.month + 1) // 4 + 1
-    reports = {}
+    raws = {}
     for year in range(FIRST_YEAR, last_year + 1):
         for quarter in QUARTERS:
             if year == last_year and quarter > last_quarter:
                 break
             raw = rba.get_somp_table(year, quarter)
             if raw is not None:
-                reports[f"{year}Q{quarter}"] = _clean(raw)
-    if not reports:
+                raws[f"{year}Q{quarter}"] = raw
+    if not raws:
         raise ValueError("No SOMP forecast tables found")
+
+    # each table indexed by subject, with numbers (fractions resolved) for the forecasts
+    reports = {}
+    for report, raw in raws.items():
+        table = raw.set_index(raw.columns[0])
+        table.index.name = "Index"
+        for col in table.columns:
+            text = table[col].astype(str)
+            for symbol, replacement in FRACTIONS.items():
+                text = text.str.replace(symbol, replacement)
+            table[col] = pd.to_numeric(text, errors="coerce")
+        table = table.dropna(how="all", axis="index")  # section headings, from Feb 2024
+        table.index = table.index.str.replace(FOOTNOTE_MARKER, "", regex=True).str.title()
+        reports[report] = table
     return reports
 
 
@@ -409,24 +409,21 @@ def _twi() -> pd.Series:
     return twi.rename("TWI")
 
 
-def _brent() -> pd.Series:
-    """Monthly mean of daily Brent front-month futures, complete months only."""
-    daily = yahoo.get_close(BRENT_TICKER, BRENT_START)
-    counts = daily.resample("M").count()
-    return daily.resample("M").mean()[counts >= MIN_TRADING_DAYS].rename("Brent")
-
-
 def fetch() -> SompData:
     """Fetch every SOMP forecast table and the outcomes to compare them with."""
     abs_series, abs_sources = _abs_series()
     _derived(abs_series, abs_sources)
+    # Brent: monthly mean of daily front-month futures, complete months only
+    brent_daily = yahoo.get_close(BRENT_TICKER, BRENT_START)
+    trading_days = brent_daily.resample("M").count()
+    brent = brent_daily.resample("M").mean()[trading_days >= MIN_TRADING_DAYS].rename("Brent")
     return SompData(
         somp=_by_subject(_somp_reports()),
         abs_series=abs_series,
         abs_sources=abs_sources,
         cash_rate=get_cash_rate().rename(CASH_RATE_NAME),
         twi=_twi(),
-        brent=_brent(),
+        brent=brent,
     )
 
 
@@ -453,32 +450,28 @@ def _shading_note(forecasts: pd.DataFrame, vintages: int) -> str:
     return f"Earlier SOMPs shaded dark ({first.year}) to light."
 
 
-def _plot_all_forecasts(axes: Axes, forecasts: pd.DataFrame) -> None:
-    """Add every SOMP vintage: earlier ones thin, shaded and unlabelled; the latest labelled in dark red."""
-    earlier, last = forecasts.columns[:-1], forecasts.columns[-1]
-    shades = [to_hex(shade) for shade in colormaps[SHADE_MAP](np.linspace(0, 1, len(earlier)))]
-    for report, shade in zip(earlier, shades, strict=True):
-        series = forecasts[report].astype(float).dropna()
-        if series.empty:
-            continue  # a vintage wholly before the chart window
-        mg.line_plot(series.rename(NO_LEGEND), ax=axes, color=[shade], width=FORECAST_WIDTH, annotate=False)
-    label = str(last)[2:]  # e.g. "26Q3"
-    mg.line_plot(
-        forecasts[last].astype(float).dropna().rename(label),
-        ax=axes,
-        color=[LATEST_COLOR],
-        width=FORECAST_WIDTH,
-        marker=MARKERS[0],
-        markersize=FORECAST_MARKERSIZE,
-        **_annotation(single=False, label=label),
-    )
-
-
 def _plot_forecasts(axes: Axes, forecasts: pd.DataFrame, vintages: int, start: pd.Period) -> None:
     """Add SOMP forecast vintages from start: every one, or the latest few with the latest in dark red."""
     forecasts = forecasts.loc[forecasts.index >= start]
     if vintages == ALL_VINTAGES:
-        _plot_all_forecasts(axes, forecasts)
+        # earlier vintages thin, shaded and unlabelled; the latest labelled in dark red
+        earlier, latest = forecasts.columns[:-1], forecasts.columns[-1]
+        shades = [to_hex(shade) for shade in colormaps[SHADE_MAP](np.linspace(0, 1, len(earlier)))]
+        for report, shade in zip(earlier, shades, strict=True):
+            series = forecasts[report].astype(float).dropna()
+            if series.empty:
+                continue  # a vintage wholly before the chart window
+            mg.line_plot(series.rename(NO_LEGEND), ax=axes, color=[shade], width=FORECAST_WIDTH, annotate=False)
+        label = str(latest)[2:]  # e.g. "26Q3"
+        mg.line_plot(
+            forecasts[latest].astype(float).dropna().rename(label),
+            ax=axes,
+            color=[LATEST_COLOR],
+            width=FORECAST_WIDTH,
+            marker=MARKERS[0],
+            markersize=FORECAST_MARKERSIZE,
+            **_annotation(single=False, label=label),
+        )
         return
     forecasts = forecasts[forecasts.columns[-vintages:]]
     single = len(forecasts.columns) == 1
@@ -556,7 +549,7 @@ def somp_vs_abs(data: SompData) -> None:
             if subject in LEVEL_SERIES:
                 history, measure = series, ""
             else:
-                history = series.pct_change(periods=YEAR_QUARTERS, fill_method=None).dropna() * PERCENT
+                history = ra.percent_change(series, YEAR_QUARTERS).dropna()
                 measure = "Annual Growth"
             axes = mg.line_plot(
                 history.loc[PLOT_START_Q:].rename(subject),

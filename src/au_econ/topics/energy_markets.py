@@ -149,21 +149,21 @@ def _period(value: object) -> pd.Period:
 
 
 def _last_day(frame: pd.DataFrame | pd.Series) -> str:
-    """Return the last date with any data, e.g. "2-Oct-2026"."""
-    return _period(frame.dropna(how="all").index[-1]).strftime("%-d-%b-%Y")
+    """Return the last date with any data, e.g. "02-Oct-2026"."""
+    return _period(frame.dropna(how="all").index[-1]).strftime("%d-%b-%Y")
 
 
 def _as_of(dates: dict[str, pd.Timestamp]) -> str:
-    """Return the newest trade date, naming any series behind it, e.g. "2-Oct-2026; TTF (Europe) 1-Oct".
+    """Return the newest trade date, naming any series behind it, e.g. "02-Oct-2026; TTF (Europe) 01-Oct".
 
     Each series that is behind is also reported in the log.
     """
     newest = max(dates.values())
-    text = newest.strftime("%-d-%b-%Y")
+    text = newest.strftime("%d-%b-%Y")
     for label, date in dates.items():
         if date < newest:
-            print(f"{label}: data to {date.strftime('%-d-%b-%Y')}, behind {text}")
-            text += f"; {label} {date.strftime('%-d-%b')}"
+            print(f"{label}: data to {date.strftime('%d-%b-%Y')}, behind {text}")
+            text += f"; {label} {date.strftime('%d-%b')}"
     return text
 
 
@@ -213,28 +213,6 @@ def _annotate_point(
     )
 
 
-def _first_contango_flip(curve: pd.Series) -> pd.Period | None:
-    """Return the first month of a sustained backwardation-to-contango flip, or None.
-
-    On a curve that begins in backwardation: the first contract month where the next
-    month settles higher and the average of all later months exceeds it by more than
-    CONTANGO_THRESHOLD_PCT_PER_MONTH times the number of remaining months.
-    """
-    valid = curve.dropna()
-    if len(valid) < MIN_CURVE_POINTS or valid.iloc[1] >= valid.iloc[0]:  # must start in backwardation
-        return None
-    return next(
-        (
-            _period(valid.index[j])
-            for j in range(len(valid) - 1)
-            if valid.iloc[j + 1] > valid.iloc[j]
-            and valid.iloc[j + 1 :].mean() / valid.iloc[j] - 1
-            > CONTANGO_THRESHOLD_PCT_PER_MONTH / PERCENT * (len(valid) - 1 - j)
-        ),
-        None,
-    )
-
-
 def _reference_lines(columns: pd.Index, means: dict[str, float]) -> list[dict[str, Any]]:
     """Return the 2025-mean reference line for each column that has one, in its colour, dashed and finer."""
     colors = get_color_list(len(columns))  # mgplot's line colours
@@ -271,17 +249,35 @@ def _forward_curve_chart(frame: pd.DataFrame, as_of: str, *, title: str, rfooter
     average = sum(changes) / len(changes) if changes else 0.0
     back = _period(frame.dropna(how="all").index[-1])
     colors = get_color_list(frame.shape[1])  # mgplot's line colours
-    flips = [
-        {
-            "x": flip,
-            "color": colors[i],
-            "linestyle": "-.",
-            "linewidth": REFERENCE_LINE_WIDTH,
-            "label": f"{column}: backwardation to contango",
-        }
-        for i, column in enumerate(frame.columns)
-        if (flip := _first_contango_flip(frame[column])) is not None
-    ]
+    # the first month of a sustained backwardation-to-contango flip, on a curve that begins in
+    # backwardation: the first contract month where the next month settles higher and the average
+    # of all later months exceeds it by more than CONTANGO_THRESHOLD_PCT_PER_MONTH times the
+    # number of remaining months
+    flips = []
+    for i, column in enumerate(frame.columns):
+        valid = frame[column].dropna()
+        if len(valid) < MIN_CURVE_POINTS or valid.iloc[1] >= valid.iloc[0]:
+            continue
+        flip = next(
+            (
+                _period(valid.index[j])
+                for j in range(len(valid) - 1)
+                if valid.iloc[j + 1] > valid.iloc[j]
+                and valid.iloc[j + 1 :].mean() / valid.iloc[j] - 1
+                > CONTANGO_THRESHOLD_PCT_PER_MONTH / PERCENT * (len(valid) - 1 - j)
+            ),
+            None,
+        )
+        if flip is not None:
+            flips.append(
+                {
+                    "x": flip,
+                    "color": colors[i],
+                    "linestyle": "-.",
+                    "linewidth": REFERENCE_LINE_WIDTH,
+                    "label": f"{column}: backwardation to contango",
+                }
+            )
     mg.line_plot_finalise(
         frame,
         title=title,
@@ -317,8 +313,8 @@ def physical_spot(data: EnergyData) -> None:
     """EIA daily spot for WTI and Brent, and the OPEC Reference Basket."""
     prices = _physical_spot(data)
     _summarise(prices, "Physical spot")
-    eia_last = _period(prices[EIA_WTI].dropna().index[-1]).strftime("%-d-%b")
-    orb_last = _period(prices[OPEC_BASKET].dropna().index[-1]).strftime("%-d-%b")
+    eia_last = _period(prices[EIA_WTI].dropna().index[-1]).strftime("%d-%b")
+    orb_last = _period(prices[OPEC_BASKET].dropna().index[-1]).strftime("%d-%b")
     mg.line_plot_finalise(
         prices,
         title="Crude Oil Physical Spot: WTI, Brent and OPEC Basket",
@@ -366,7 +362,7 @@ def location_premium(data: EnergyData) -> None:
         dx=10,
         dy=-4,
         ha="left",
-        text=f"peak {spreads[to_wti].max():.2f}, {peak.strftime('%-d %b')}",
+        text=f"peak {spreads[to_wti].max():.2f}, {peak.strftime('%d %b')}",
     )
     mg.finalise_plot(
         ax,
@@ -389,7 +385,7 @@ def crude_benchmarks(data: EnergyData) -> None:
     prices = _oilprice_benchmarks(data)
     _summarise(prices, "Crude futures (Oilprice.com)")
     last_dates = {
-        column: _period(prices[column].dropna().index[-1]).strftime("%-d-%b") for column in prices.columns
+        column: _period(prices[column].dropna().index[-1]).strftime("%d-%b") for column in prices.columns
     }
     dates = ", ".join(f"{column.split(' ')[0]} {date}" for column, date in last_dates.items())
     mg.line_plot_finalise(
@@ -562,7 +558,7 @@ def retail_petrol(data: EnergyData) -> None:
         dy=-46,
         ha="right",
         arrow=True,
-        text=f"July trough {july.min():.3f}, {trough.strftime('%-d %b')}",
+        text=f"July trough {july.min():.3f}, {trough.strftime('%d %b')}",
     )
     mg.finalise_plot(
         ax,

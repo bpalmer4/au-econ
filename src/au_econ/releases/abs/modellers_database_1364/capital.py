@@ -48,7 +48,7 @@ def _deepening(data: ModellersData) -> pd.Series:
 
 def _growth_with_trend(series: pd.Series) -> pd.DataFrame:
     """Return year-on-year growth and its Henderson trend."""
-    growth = (series.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+    growth = ra.percent_change(series, QUARTERS_PER_YEAR).dropna()
     return pd.DataFrame({"Annual growth": growth, f"{HENDERSON_TERMS}-term HMA": hma(growth, HENDERSON_TERMS)})
 
 
@@ -89,8 +89,8 @@ def capital_stock_comparison(data: ModellersData) -> None:
     line_plot_finalise(
         pd.DataFrame(
             {
-                "Perpetual Inventory": capital_pi.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
-                "ABS Modellers Database": capital_abs.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
+                "Perpetual Inventory": ra.percent_change(capital_pi, QUARTERS_PER_YEAR),
+                "ABS Modellers Database": ra.percent_change(capital_abs, QUARTERS_PER_YEAR),
             }
         ).dropna(),
         title="Capital Stock Growth (YoY): PI vs ABS Official",
@@ -194,7 +194,7 @@ def capital_deepening(data: ModellersData) -> None:
         pd.DataFrame(
             {
                 "Capital Deepening": deepening_growth["Annual growth"],
-                "Labour Productivity": labour_prod_norm.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
+                "Labour Productivity": ra.percent_change(labour_prod_norm, QUARTERS_PER_YEAR),
             }
         ).dropna(),
         title="Capital Deepening vs Labour Productivity Growth",
@@ -209,7 +209,7 @@ def capital_deepening(data: ModellersData) -> None:
 
 def deepening_decade_averages(data: ModellersData) -> None:
     """Chart capital deepening growth with decade averages: calendar decades and years ending 6 to 5."""
-    growth = (_deepening(data).pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+    growth = ra.percent_change(_deepening(data), QUARTERS_PER_YEAR).dropna()
     rfooter = BOTH_SOURCE
     decade_average_plot(
         growth,
@@ -307,8 +307,8 @@ def capital_productivity(data: ModellersData) -> None:
     line_plot_finalise(
         pd.DataFrame(
             {
-                "Labour Productivity (Y/L)": labour.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
-                "Capital Deepening (K/L)": deepening.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT,
+                "Labour Productivity (Y/L)": ra.percent_change(labour, QUARTERS_PER_YEAR),
+                "Capital Deepening (K/L)": ra.percent_change(deepening, QUARTERS_PER_YEAR),
                 "Capital Productivity (Y/K)": productivity_growth["Annual growth"],
             }
         ).dropna(),

@@ -204,8 +204,3 @@ def cagr_path_by_government(
         path[wanted] = ((window[wanted] / window.iloc[0]) ** (periods_per_year / elapsed[wanted]) - 1) * PERCENT
         paths[str(name)] = path
     return DataFrame(paths)
-
-
-def year_ended_growth(series: Series, periods_per_year: int = QUARTERS_PER_YEAR) -> Series:
-    """Return year-ended growth of a level series, in per cent."""
-    return ((series / series.shift(periods_per_year) - 1) * PERCENT).dropna()

@@ -25,7 +25,6 @@ from au_econ.releases.abs.modellers_database_1364.common import (
     data_to,
     decade_average_plot,
     is_quarter_end,
-    year_ended_growth,
 )
 from au_econ.series.prices import get_cpi
 
@@ -95,37 +94,6 @@ def _sa(data: ModellersData, did: str, table: str) -> pd.Series:
     return series
 
 
-def _annualise(quarterly_growth: pd.Series) -> pd.Series:
-    """Annualise a quarterly percentage change."""
-    return ((1 + quarterly_growth / PERCENT) ** QUARTERS_PER_YEAR - 1) * PERCENT
-
-
-def _inflation_regime_spans(index: pd.PeriodIndex) -> list[dict[str, Any]]:
-    """Return axvspan dicts shading quarters where annualised trimmed mean inflation left the 2-3% band."""
-    trimmed, _, _ = get_cpi("trimmed")
-    inflation = _annualise(trimmed.pct_change(fill_method=None) * PERCENT).dropna()
-    if inflation.empty:
-        raise ValueError("No inflation data returned")
-    spans: list[dict[str, Any]] = []
-    for period, raw in zip(index, inflation.reindex(index).to_numpy(), strict=True):
-        value = float(raw)
-        if pd.isna(value) or INFLATION_LOW <= value <= INFLATION_HIGH:
-            continue
-        high = value > INFLATION_HIGH
-        weight = min((value - INFLATION_HIGH if high else INFLATION_LOW - value) / SHADE_FULL, 1.0)
-        spans.append(
-            {
-                "xmin": period,
-                "xmax": period + 1,
-                "color": "tab:red" if high else "tab:blue",
-                "alpha": SHADE_ALPHA_MIN + weight * (SHADE_ALPHA_MAX - SHADE_ALPHA_MIN),
-                "zorder": 0,
-                "linewidth": 0,
-            }
-        )
-    return spans
-
-
 @cache
 def _capex_table(table: str) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     """Return one 5625.0 table (cached; not for mutation)."""
@@ -141,38 +109,6 @@ def _capex(table: str, asset_did: str, industry_did: str = CAPEX_NON_MINING_DID)
     if series.empty:
         raise ValueError(f"No capex data for {asset_did!r}, {industry_did!r} in {table}")
     return series.copy()
-
-
-def _credit_growth() -> pd.Series:
-    """Return year-ended growth in non-financial business credit (RBA D1, SA) at each quarter's last month."""
-    data, meta = ra.read_rba_table(CREDIT_TABLE)
-    match = meta[meta.Title == CREDIT_TITLE]
-    if len(match) != 1:
-        raise ValueError(f"Expected one {CREDIT_TABLE} series titled {CREDIT_TITLE!r}")
-    monthly = data[match.index[0]].dropna().astype(float)
-    if monthly.empty:
-        raise ValueError(f"No data for {CREDIT_TITLE!r}")
-    quarterly = monthly[is_quarter_end(monthly.index)]
-    quarterly.index = pd.PeriodIndex(quarterly.index).asfreq("Q")
-    return quarterly
-
-
-def _lending_by_industry() -> pd.DataFrame:
-    """Return business lending outstanding by industry (RBA D14.1), summed across business sizes, by quarter."""
-    data, meta = ra.read_rba_table(LENDING_TABLE)
-    rows = meta[meta.Title.str.contains(LENDING_SIZE_MARKER) & meta.index.isin(data.columns)]
-    if rows.empty:
-        raise ValueError(f"No industry-by-size series with data in {LENDING_TABLE}")
-    industry = rows.Title.str.split("; ").str[-1]
-    monthly = pd.DataFrame(
-        {
-            name: data[group.index].astype(float).sum(axis=1, min_count=len(group))
-            for name, group in rows.groupby(industry)
-        }
-    )
-    quarterly = monthly[is_quarter_end(monthly.index)]
-    quarterly.index = pd.PeriodIndex(quarterly.index).asfreq("Q")
-    return quarterly.dropna(how="all")
 
 
 def _contributions_chart(contributions: pd.DataFrame, growth: pd.Series, **kwargs: Any) -> None:
@@ -206,7 +142,7 @@ def investment_per_hour(data: ModellersData) -> None:
         lfooter=f"{lfooter}{data_to(ratio)}",
     )
     decade_average_plot(
-        ((ratio / ratio.shift(QUARTERS_PER_YEAR) - 1) * PERCENT).dropna().rename("Investment per hour worked"),
+        ra.percent_change(ratio, QUARTERS_PER_YEAR).dropna().rename("Investment per hour worked"),
         title="Business Investment per Hour Worked: Growth with Decade Averages",
         pre_tag="investment-per-hour-",
         tag="decade-averages",
@@ -217,24 +153,48 @@ def investment_per_hour(data: ModellersData) -> None:
 
 def business_investment_growth(data: ModellersData) -> None:
     """Chart annualised business investment growth over a background of the inflation regime."""
-    growth = _annualise(_sa(data, BUSINESS_INVESTMENT_GROWTH_DID, VOLUME_MEASURES)).rename(
-        "Annualised quarterly growth"
-    )
+    growth = ra.annualise_percentages(
+        _sa(data, BUSINESS_INVESTMENT_GROWTH_DID, VOLUME_MEASURES), periods_per_year=QUARTERS_PER_YEAR
+    ).rename("Annualised quarterly growth")
     frame = pd.DataFrame(
         {growth.name: growth, f"{HENDERSON_TERMS}-term Henderson trend": hma(growth, HENDERSON_TERMS)}
     )
     frame = frame[frame.index >= INVESTMENT_FROM]
+    trimmed, _, _ = get_cpi("trimmed")
+    inflation = ra.annualise_percentages(
+        ra.percent_change(trimmed, 1), periods_per_year=QUARTERS_PER_YEAR
+    ).dropna()
+    if inflation.empty:
+        raise ValueError("No inflation data returned")
     for start in quarterly_plot_times:
         window = frame.iloc[start:]
         if not isinstance(window.index, pd.PeriodIndex):
             raise TypeError(f"Expected a PeriodIndex, got {type(window.index)}")
+        # shade the quarters where annualised trimmed mean inflation left the 2-3% band
+        spans: list[dict[str, Any]] = []
+        for period, raw in zip(window.index, inflation.reindex(window.index).to_numpy(), strict=True):
+            value = float(raw)
+            if pd.isna(value) or INFLATION_LOW <= value <= INFLATION_HIGH:
+                continue
+            high = value > INFLATION_HIGH
+            weight = min((value - INFLATION_HIGH if high else INFLATION_LOW - value) / SHADE_FULL, 1.0)
+            spans.append(
+                {
+                    "xmin": period,
+                    "xmax": period + 1,
+                    "color": "tab:red" if high else "tab:blue",
+                    "alpha": SHADE_ALPHA_MIN + weight * (SHADE_ALPHA_MAX - SHADE_ALPHA_MIN),
+                    "zorder": 0,
+                    "linewidth": 0,
+                }
+            )
         ax = line_plot(window, width=[0.75, 1.5], annotate=True, rounding=1)
         finalise_plot(
             ax,
             title="Business Investment: Annualised Quarterly Growth",
             ylabel="Per cent",
             y0=True,
-            axvspan=_inflation_regime_spans(window.index),
+            axvspan=spans,
             legend={"loc": "best", "fontsize": "x-small"},
             lheader=f"Shaded where annualised quarterly inflation sat outside "
             f"{INFLATION_LOW:g}-{INFLATION_HIGH:g}%: red above, blue below",
@@ -246,12 +206,25 @@ def business_investment_growth(data: ModellersData) -> None:
 
 def credit_vs_capex(_data: ModellersData) -> None:
     """Chart year-ended growth in business credit against non-mining capex, nominal and volume."""
-    credit = _credit_growth()
+    # year-ended growth in non-financial business credit (RBA D1, SA) at each quarter's last month
+    credit_data, credit_meta = ra.read_rba_table(CREDIT_TABLE)
+    match = credit_meta[credit_meta.Title == CREDIT_TITLE]
+    if len(match) != 1:
+        raise ValueError(f"Expected one {CREDIT_TABLE} series titled {CREDIT_TITLE!r}")
+    monthly = credit_data[match.index[0]].dropna().astype(float)
+    if monthly.empty:
+        raise ValueError(f"No data for {CREDIT_TITLE!r}")
+    credit = monthly[is_quarter_end(monthly.index)]
+    credit.index = pd.PeriodIndex(credit.index).asfreq("Q")
     frame = pd.DataFrame(
         {
             "Business credit": credit,
-            "Non-mining capex (current prices)": year_ended_growth(_capex(CAPEX_CP_TABLE, CAPEX_TOTAL_ASSET_DID)),
-            "Non-mining capex (volume)": year_ended_growth(_capex(CAPEX_CVM_TABLE, CAPEX_TOTAL_ASSET_DID)),
+            "Non-mining capex (current prices)": ra.percent_change(
+                _capex(CAPEX_CP_TABLE, CAPEX_TOTAL_ASSET_DID), QUARTERS_PER_YEAR
+            ),
+            "Non-mining capex (volume)": ra.percent_change(
+                _capex(CAPEX_CVM_TABLE, CAPEX_TOTAL_ASSET_DID), QUARTERS_PER_YEAR
+            ),
         }
     ).loc[credit.index[0] :]
     multi_start(
@@ -279,7 +252,7 @@ def capex_by_asset(_data: ModellersData) -> None:
             for label, asset in ((lab, _capex(CAPEX_CVM_TABLE, did)) for lab, did in CAPEX_ASSETS.items())
         }
     ).dropna()
-    growth = year_ended_growth(total).rename("Total non-mining capex growth (%)")
+    growth = ra.percent_change(total, QUARTERS_PER_YEAR).rename("Total non-mining capex growth (%)")
     start = contributions.index[quarterly_plot_times[-1]]
     _contributions_chart(
         contributions.loc[start:],
@@ -298,7 +271,7 @@ def capex_by_industry(_data: ModellersData) -> None:
     """Chart contributions to year-ended growth in non-mining capex (volume) by industry."""
     total = _capex(CAPEX_CVM_TABLE, CAPEX_TOTAL_ASSET_DID)
     year_ago = total.shift(QUARTERS_PER_YEAR)
-    growth = year_ended_growth(total).rename("Total non-mining capex growth (%)")
+    growth = ra.percent_change(total, QUARTERS_PER_YEAR).rename("Total non-mining capex growth (%)")
     contributions = {}
     for label, industry_did in CAPEX_INDUSTRIES.items():
         industry = _capex(CAPEX_CVM_TABLE, CAPEX_TOTAL_ASSET_DID, industry_did)
@@ -322,7 +295,23 @@ def capex_by_industry(_data: ModellersData) -> None:
 
 def lending_by_industry(_data: ModellersData) -> None:
     """Chart contributions to year-ended growth in lending to non-financial industries."""
-    levels = _lending_by_industry()
+    # business lending outstanding by industry (RBA D14.1), summed across business sizes, by quarter
+    lending, lending_meta = ra.read_rba_table(LENDING_TABLE)
+    rows = lending_meta[
+        lending_meta.Title.str.contains(LENDING_SIZE_MARKER) & lending_meta.index.isin(lending.columns)
+    ]
+    if rows.empty:
+        raise ValueError(f"No industry-by-size series with data in {LENDING_TABLE}")
+    industry = rows.Title.str.split("; ").str[-1]
+    monthly = pd.DataFrame(
+        {
+            name: lending[group.index].astype(float).sum(axis=1, min_count=len(group))
+            for name, group in rows.groupby(industry)
+        }
+    )
+    levels = monthly[is_quarter_end(monthly.index)]
+    levels.index = pd.PeriodIndex(levels.index).asfreq("Q")
+    levels = levels.dropna(how="all")
     named = [name for names in LENDING_GROUPS.values() for name in names]
     missing = {*named, FINANCIAL_INDUSTRY} - set(levels.columns)
     if missing:
@@ -338,7 +327,8 @@ def lending_by_industry(_data: ModellersData) -> None:
     contributions = pd.DataFrame(
         {label: (level - level.shift(QUARTERS_PER_YEAR)) / year_ago * PERCENT for label, level in grouped.items()}
     ).dropna()
-    growth = year_ended_growth(total).rename("Lending to non-financial industries (%)").loc[contributions.index]
+    growth = ra.percent_change(total, QUARTERS_PER_YEAR).rename("Lending to non-financial industries (%)")
+    growth = growth.loc[contributions.index]
 
     axes = bar_plot(contributions, stacked=True)
     line_plot(growth, ax=axes, color="black", annotate=True)

@@ -40,18 +40,6 @@ RANGE_MONTHS = (13, 25, 37, 49)
 
 
 # --- data
-def _align_quarterly(frame: pd.DataFrame) -> pd.DataFrame:
-    """Move quarterly reporters from the mid-quarter month, where the OECD places them, to the quarter end.
-
-    Only Australia's quarterly years (before AUS_MONTHLY_START) move; New Zealand moves throughout.
-    """
-    aus, nzl = oecd.COUNTRIES[AUSTRALIA], oecd.COUNTRIES[NEW_ZEALAND]
-    quarterly = frame.index < AUS_MONTHLY_START
-    frame.loc[quarterly, aus] = frame[aus].loc[quarterly].shift(1)
-    frame[nzl] = frame[nzl].shift(1)
-    return frame
-
-
 def fetch() -> pd.DataFrame:
     """Return annual CPI inflation (per cent), monthly, one column per country label."""
     combined: pd.DataFrame | None = None
@@ -73,10 +61,15 @@ def fetch() -> pd.DataFrame:
     combined.loc[monthly.index, aus] = monthly[aus]
     print(f"Patched AUS with monthly data: {monthly.index.min()} to {monthly.index.max()}")
 
-    inflation = _align_quarterly(combined)
-    print(inflation[[aus, oecd.COUNTRIES[NEW_ZEALAND]]].tail(12))
-    oecd.report_missing(inflation)
-    return inflation.rename(columns=oecd.LABELS)
+    # move quarterly reporters from the mid-quarter month, where the OECD places them, to the
+    # quarter end: Australia's quarterly years only (before AUS_MONTHLY_START); New Zealand throughout
+    nzl = oecd.COUNTRIES[NEW_ZEALAND]
+    quarterly = combined.index < AUS_MONTHLY_START
+    combined.loc[quarterly, aus] = combined[aus].loc[quarterly].shift(1)
+    combined[nzl] = combined[nzl].shift(1)
+    print(combined[[aus, nzl]].tail(12))
+    oecd.report_missing(combined)
+    return combined.rename(columns=oecd.LABELS)
 
 
 # --- charts

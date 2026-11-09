@@ -51,22 +51,16 @@ ITEMS = {  # label: ABS data item description
 }
 
 
-# --- helpers
-def _shares(release: AbsRelease, table: str) -> dict[str, pd.Series]:
-    """Return each component as a per cent of GDP, from one expenditure table."""
-    box, _meta = ra.read_abs_by_desc(
-        wanted=ITEMS, abs_dict=release.data, abs_meta=release.meta, table=table, stype=SEASONALLY_ADJUSTED
-    )
-    gdp = box.pop(GDP)
-    return {label: series / gdp * PERCENT for label, series in box.items()}
-
-
 # --- charts
 def components(release: AbsRelease) -> None:
     """Each GDP(E) component, trade and net exports as a per cent of GDP, in volume and current price terms."""
     with chart_subdir(SUBDIR):
         for label, table, measure in MEASURES:
-            box = _shares(release, table)
+            levels, _meta = ra.read_abs_by_desc(
+                wanted=ITEMS, abs_dict=release.data, abs_meta=release.meta, table=table, stype=SEASONALLY_ADJUSTED
+            )
+            gdp = levels.pop(GDP)
+            box = {name: series / gdp * PERCENT for name, series in levels.items()}  # per cent of GDP
             common: dict[str, Any] = {
                 "ylabel": "Per cent",
                 "rfooter": release.source,

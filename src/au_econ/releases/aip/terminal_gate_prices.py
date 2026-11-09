@@ -112,27 +112,8 @@ def _footer(frame: pd.DataFrame, *, city_level: bool = False) -> str:
     if not isinstance(last, pd.Period):
         raise TypeError("expected a daily PeriodIndex")
     scope = "business days" if city_level else "national average, business days"
-    data_to = last.strftime("%-d-%b-%Y")
+    data_to = last.strftime("%d-%b-%Y")
     return f"Australia. Daily wholesale terminal gate prices (inc. GST), {scope}. Data to {data_to}."
-
-
-def _daily_deflator() -> tuple[pd.Series, str]:
-    """Multipliers into today's dollars, from the seasonally adjusted CPI, and their label.
-
-    The quarterly CPI is projected to the current quarter at its average growth over the
-    last LOOKBACK_QUARTERS quarters, then interpolated to daily.
-    """
-    cpi, _units, _stype = get_cpi("headline_sa")
-    quarterly = cpi.copy()
-    growth = quarterly.pct_change().iloc[-LOOKBACK_QUARTERS:].mean()
-    today = pd.Timestamp.today().normalize()
-    this_quarter = pd.Period(today, freq="Q")
-    while quarterly.index[-1] <= this_quarter:
-        quarterly[quarterly.index[-1] + 1] = quarterly.iloc[-1] * (1 + growth)
-    daily = quarterly.to_timestamp(how="end").resample("D").interpolate(method="linear")
-    deflator = daily.loc[today] / daily
-    deflator.index = deflator.index.to_period("D")
-    return deflator, f"{today.strftime('%B %Y')} dollar terms"
 
 
 def _national_chart(frame: pd.DataFrame, *, tag: str = "", events: list[dict[str, Any]] | None = None) -> None:
@@ -177,7 +158,20 @@ def city_prices(data: FuelData) -> None:
 
 def real_fuel_prices(data: FuelData) -> None:
     """National petrol and diesel prices in today's dollars."""
-    deflator, dollar_label = _daily_deflator()
+    # multipliers into today's dollars, from the seasonally adjusted CPI: the quarterly CPI is
+    # projected to the current quarter at its average growth over the last LOOKBACK_QUARTERS
+    # quarters, then interpolated to daily
+    cpi, _units, _stype = get_cpi("headline_sa")
+    quarterly = cpi.copy()
+    growth = quarterly.pct_change().iloc[-LOOKBACK_QUARTERS:].mean()
+    today = pd.Timestamp.today().normalize()
+    this_quarter = pd.Period(today, freq="Q")
+    while quarterly.index[-1] <= this_quarter:
+        quarterly[quarterly.index[-1] + 1] = quarterly.iloc[-1] * (1 + growth)
+    daily = quarterly.to_timestamp(how="end").resample("D").interpolate(method="linear")
+    deflator = daily.loc[today] / daily
+    deflator.index = deflator.index.to_period("D")
+    dollar_label = f"{today.strftime('%B %Y')} dollar terms"
     real = pd.DataFrame({fuel: data.national[fuel] * deflator for fuel in (PETROL, DIESEL)}).dropna()
     line_plot_finalise(
         real,

@@ -166,7 +166,7 @@ def _series(release: AbsRelease, table: str, did: str) -> pd.Series:
 def _gdp_growth() -> pd.Series:
     """Return published quarterly GDP growth: the per cent change in chain volume GDP."""
     level, _units = get_gdp("CVM", "SA")
-    growth = (level / level.shift(1) - 1) * PERCENT
+    growth = ra.percent_change(level, 1)
     growth.index = pd.PeriodIndex(growth.index, freq="Q-DEC")
     growth.name = "GDP growth"
     return growth
@@ -191,30 +191,6 @@ def _expenditure(release: AbsRelease) -> tuple[pd.DataFrame, pd.Series, pd.Perio
         }
     ).dropna()
     return comp, _gdp_growth().reindex(comp.index), comp.index[-1]
-
-
-def _production(release: AbsRelease) -> tuple[pd.DataFrame, pd.Series, pd.Period]:
-    """Return the production-side sector contributions, GDP growth, and the latest quarter.
-
-    The statistical discrepancy (P) is published as a level only, so it is the residual.
-    """
-
-    def sector(industries: tuple[str, ...]) -> pd.Series:
-        return reduce(add, (_series(release, INDUSTRY_GVA, f"{ind} ;  {TO_GROWTH}") for ind in industries))
-
-    comp = pd.DataFrame(
-        {
-            "Market sector": sector(MARKET_INDUSTRIES),
-            "Non-market sector": sector(NON_MARKET_INDUSTRIES),
-            "Ownership of dwellings": _series(release, INDUSTRY_GVA, f"Ownership of dwellings ;  {TO_GROWTH}"),
-            "Taxes less subsidies": _series(
-                release, INDUSTRY_GVA, f"Taxes less subsidies on products: {TO_GROWTH}"
-            ),
-        }
-    ).dropna()
-    gdp = _gdp_growth().reindex(comp.index)
-    comp["Statistical discrepancy (P)"] = gdp - comp.sum(axis=1)
-    return comp, gdp, comp.index[-1]
 
 
 def _split_label(label: str) -> str:
@@ -337,14 +313,6 @@ def _level(release: AbsRelease, table: str, did: str) -> pd.Series:
     return series
 
 
-def _household_demand(release: AbsRelease) -> pd.Series:
-    """Return household demand: consumption, dwellings and ownership transfer costs (the ABS publishes none)."""
-    levels = pd.DataFrame(
-        {name: _level(release, EXPENDITURE_VOLUME, PFD_COMPONENTS[name]) for name in HOUSEHOLD_COMPONENTS}
-    )
-    return levels.sum(axis=1, min_count=len(HOUSEHOLD_COMPONENTS)).dropna()
-
-
 def _income_contributions(
     release: AbsRelease, items: tuple[tuple[str, str, str], ...], total_did: str
 ) -> tuple[pd.DataFrame, pd.Series]:
@@ -376,7 +344,11 @@ def expenditure_contributions(release: AbsRelease) -> None:
 def demand_contributions(release: AbsRelease) -> None:
     """Contributions to growth in private final demand, business investment and household demand; their growth."""
     business = _level(release, EXPENDITURE_VOLUME, BUSINESS_DID)
-    household = _household_demand(release)
+    # household demand: consumption, dwellings and ownership transfer costs (the ABS publishes none)
+    household_levels = pd.DataFrame(
+        {name: _level(release, EXPENDITURE_VOLUME, PFD_COMPONENTS[name]) for name in HOUSEHOLD_COMPONENTS}
+    )
+    household = household_levels.sum(axis=1, min_count=len(HOUSEHOLD_COMPONENTS)).dropna()
     with chart_subdir(SUBDIR):
         for names, total, label in (
             (tuple(PFD_COMPONENTS), _level(release, ANALYTICAL, PFD_DID), "Private Final Demand"),
@@ -385,7 +357,7 @@ def demand_contributions(release: AbsRelease) -> None:
         ):
             levels = pd.DataFrame({n: _level(release, EXPENDITURE_VOLUME, PFD_COMPONENTS[n]) for n in names})
             contributions = (levels.diff().div(total.shift(1), axis=0) * PERCENT).dropna().loc[CONTRIBUTIONS_FROM:]
-            growth = (total / total.shift(1) - 1) * PERCENT
+            growth = ra.percent_change(total, 1)
             growth.name = f"{label.capitalize()} growth"
             ax = _stacked_with_dots(contributions, growth.reindex(contributions.index))
             mg.finalise_plot(
@@ -490,7 +462,24 @@ def inventories(release: AbsRelease) -> None:
 
 def production_contributions(release: AbsRelease) -> None:
     """Production-side contributions to GDP growth: recent stack, 30-year distribution and averages."""
-    comp, gdp, latest = _production(release)
+    # the statistical discrepancy (P) is published as a level only, so it is the residual
+    comp = pd.DataFrame(
+        {
+            "Market sector": reduce(
+                add, (_series(release, INDUSTRY_GVA, f"{ind} ;  {TO_GROWTH}") for ind in MARKET_INDUSTRIES)
+            ),
+            "Non-market sector": reduce(
+                add, (_series(release, INDUSTRY_GVA, f"{ind} ;  {TO_GROWTH}") for ind in NON_MARKET_INDUSTRIES)
+            ),
+            "Ownership of dwellings": _series(release, INDUSTRY_GVA, f"Ownership of dwellings ;  {TO_GROWTH}"),
+            "Taxes less subsidies": _series(
+                release, INDUSTRY_GVA, f"Taxes less subsidies on products: {TO_GROWTH}"
+            ),
+        }
+    ).dropna()
+    gdp = _gdp_growth().reindex(comp.index)
+    comp["Statistical discrepancy (P)"] = gdp - comp.sum(axis=1)
+    latest = comp.index[-1]
     pre = (comp.index >= PRE_COVID[0]) & (comp.index <= PRE_COVID[1])
     window = AVERAGE_YEARS * QUARTERS_PER_YEAR
     bars = [
@@ -536,7 +525,7 @@ def income_shares(release: AbsRelease) -> None:
         )
 
         contributions, ngdp = _income_contributions(release, INCOME_CONTRIBUTIONS, "GROSS DOMESTIC PRODUCT ;")
-        growth = ((ngdp / ngdp.shift(1) - 1) * PERCENT).reindex(contributions.index)
+        growth = ra.percent_change(ngdp, 1).reindex(contributions.index)
         growth.name = "Nominal GDP growth"
         ax = _stacked_with_dots(contributions, growth, [col for _, _, col in INCOME_CONTRIBUTIONS])
         mg.finalise_plot(
@@ -566,7 +555,7 @@ def income_shares(release: AbsRelease) -> None:
             ),
         ):
             contributions, total = _income_contributions(release, items, total_did)
-            growth = (total.pct_change() * PERCENT).reindex(contributions.index)
+            growth = ra.percent_change(total, 1).reindex(contributions.index)
             growth.name = name
             ax = _stacked_with_dots(contributions, growth, [col for _, _, col in items])
             mg.finalise_plot(

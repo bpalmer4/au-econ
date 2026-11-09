@@ -24,8 +24,6 @@ from au_econ.releases.abs.labour_force_6202.common import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from au_econ.sources.abs import AbsRelease
 
 # --- constants
@@ -46,32 +44,6 @@ GROWTH_CONCEPTS = (
 )
 
 
-# --- helpers
-def _through_the_year(levels: pd.DataFrame) -> pd.DataFrame:
-    """Percentage growth over twelve months."""
-    return levels.pct_change(MONTHS_PER_YEAR) * 100
-
-
-def _three_months_annualised(levels: pd.DataFrame) -> pd.DataFrame:
-    """Percentage growth over three months, compounded to an annual rate."""
-    return ((levels / levels.shift(MONTHS_PER_QUARTER)) ** QUARTERS_PER_YEAR - 1) * 100
-
-
-def _common_prefix(labels: list[str]) -> str:
-    """Return the longest leading text shared by every label, compared character by character."""
-    first, last = min(labels), max(labels)  # what these two share, every label between them shares
-    for position, (a, b) in enumerate(zip(first, last, strict=False)):
-        if a != b:
-            return first[:position]
-    return first
-
-
-GROWTH_MEASURES: tuple[tuple[str, Callable[[pd.DataFrame], pd.DataFrame]], ...] = (
-    ("through the year", _through_the_year),
-    ("3 months annualised", _three_months_annualised),
-)
-
-
 # --- charts
 def state_rates(release: AbsRelease) -> None:
     """Unemployment and participation rates by state (trend: the seasonally adjusted series are too noisy)."""
@@ -84,7 +56,11 @@ def state_rates(release: AbsRelease) -> None:
         if frame.empty:
             raise ValueError(f"No state series found for {stem}")
         frame, units = ra.recalibrate(frame, units)
-        prefix = _common_prefix(list(map(str, frame.columns)))  # the shared part, leaving the state names
+        # the leading text every label shares, leaving the state names; what the alphabetically
+        # first and last labels share, every label between them shares
+        labels = list(map(str, frame.columns))
+        first, last = min(labels), max(labels)
+        prefix = next((first[:i] for i, (a, b) in enumerate(zip(first, last, strict=False)) if a != b), first)
         if prefix:
             frame = frame.rename(columns={x: x.replace(prefix, "") for x in frame.columns})
         frame = frame.rename(columns={x: abbreviate_state(x) for x in frame.columns})
@@ -119,9 +95,17 @@ def state_growth(release: AbsRelease) -> None:
             release.data, release.meta, {MAIN: mc.table, did: mc.did, stype: mc.stype}
         )
         columns = levels.columns.to_list()
-        for measure, transform in GROWTH_MEASURES:
+        for measure, growth in (
+            ("through the year", ra.percent_change(levels, MONTHS_PER_YEAR)),
+            (
+                "3 months annualised",
+                ra.annualise_percentages(
+                    ra.percent_change(levels, MONTHS_PER_QUARTER), periods_per_year=QUARTERS_PER_YEAR
+                ),
+            ),
+        ):
             multi_start(
-                transform(levels).dropna(how="all"),
+                growth.dropna(how="all"),
                 function=line_plot_finalise,
                 starts=line_starts,
                 title=f"{concept} growth by state: {measure}",

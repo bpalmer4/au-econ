@@ -58,26 +58,21 @@ class GovernmentDebt:
 
 
 # --- data
-def _measure(name: str, key: str) -> DebtMeasure:
-    """Fetch one measure for every area; split off the OECD aggregate."""
-    table = oecd.get_table(DATAFLOW, key, START)
-    table.index = pd.PeriodIndex(table.index.astype(str), freq="Y")
-    if OECD_AGGREGATE not in table.columns:
-        raise ValueError(f"OECD {DATAFLOW} {key}: no {OECD_AGGREGATE} aggregate")
-    aggregate = table[OECD_AGGREGATE].dropna().rename(OECD_LABEL)
-    countries = oecd.national_only(table)
-    oecd.report_missing(countries)
-    print(f"{name} debt: {countries.index[0]} to {countries.index[-1]}, {len(countries.columns)} countries")
-    return DebtMeasure(countries=countries.rename(columns=oecd.LABELS), oecd_aggregate=aggregate)
-
-
 def fetch() -> GovernmentDebt:
-    """Fetch every measure in MEASURES."""
+    """Fetch every measure in MEASURES for every area, with the OECD aggregate split off."""
     measures: dict[str, DebtMeasure] = {}
     for name, (key, _note) in MEASURES.items():
         if measures:
             time.sleep(WEB_DELAY)
-        measures[name] = _measure(name, key)
+        table = oecd.get_table(DATAFLOW, key, START)
+        table.index = pd.PeriodIndex(table.index.astype(str), freq="Y")
+        if OECD_AGGREGATE not in table.columns:
+            raise ValueError(f"OECD {DATAFLOW} {key}: no {OECD_AGGREGATE} aggregate")
+        aggregate = table[OECD_AGGREGATE].dropna().rename(OECD_LABEL)
+        countries = oecd.national_only(table)
+        oecd.report_missing(countries)
+        print(f"{name} debt: {countries.index[0]} to {countries.index[-1]}, {len(countries.columns)} countries")
+        measures[name] = DebtMeasure(countries=countries.rename(columns=oecd.LABELS), oecd_aggregate=aggregate)
     first_projection = pd.Period.now(freq="Y")
     print(f"Projections from {first_projection}")
     return GovernmentDebt(measures=measures, first_projection=first_projection)

@@ -36,12 +36,6 @@ LINK = re.compile(r'href="(https://download\.asic\.gov\.au/[^"]+\.xlsx)"')
 PUBLISHED = re.compile(r"published-(\d{1,2}-[a-z]+-\d{4})\.xlsx$")
 
 
-def _published(name: str) -> pd.Timestamp:
-    """Return the publication date in a workbook's file name; the earliest date if it has none."""
-    match = PUBLISHED.search(name)
-    return pd.Timestamp.min if match is None else pd.to_datetime(match.group(1).replace("-", " "), dayfirst=True)
-
-
 def _newest_cached(name_start: str, error: Exception) -> bytes:
     """Return the newest cached workbook whose file name starts name_start, saying so."""
     cached: list[Path] = [
@@ -51,7 +45,14 @@ def _newest_cached(name_start: str, error: Exception) -> bytes:
     ]
     if not cached:
         raise RuntimeError(f"ASIC page unreachable and no cached {name_start} workbook") from error
-    newest = max(cached, key=lambda file: _published(file.name))
+    # by the publication date in the file name; the earliest date if it has none
+    published = {}
+    for file in cached:
+        match = PUBLISHED.search(file.name)
+        published[file] = (
+            pd.Timestamp.min if match is None else pd.to_datetime(match.group(1).replace("-", " "), dayfirst=True)
+        )
+    newest = max(cached, key=published.__getitem__)
     print(f"WARNING: could not check the ASIC page ({type(error).__name__}); using cached {newest.name}")
     return newest.read_bytes()
 

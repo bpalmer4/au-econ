@@ -253,14 +253,6 @@ def _basic_wanted(release: AbsRelease) -> dict[str, dict[str, str]]:
     return wanted | {did: {"did": did, "stype": stype, "table": table} for did, stype, table in BASIC_EXTRA}
 
 
-def _sfd(release: AbsRelease) -> tuple[str, pd.DataFrame]:
-    """Return the State Final Demand units and data, one column per state."""
-    rows = ra.search_abs_meta(release.meta, {SFD_SUMMARY: mc.table, SFD_DID: mc.did, SA: mc.stype})
-    data = release.data[SFD_SUMMARY][rows[mc.id]].rename_axis("Quarter")
-    data.columns = rows[mc.did].str.replace(SFD_DID, "").str.strip().tolist()
-    return rows[mc.unit].iloc[0], data
-
-
 # --- charts
 def summary(release: AbsRelease) -> None:
     """Key GDP statistics, as z-scores and z-scaled, for the latest quarter."""
@@ -270,7 +262,7 @@ def summary(release: AbsRelease) -> None:
         for n in periods:
             series = release.data[table][series_id]
             if n:
-                series = series.pct_change(periods=n, fill_method=None) * PERCENT
+                series = ra.percent_change(series, n)
             frame[f"{n}Q growth: {label}" if n else label] = series
     summary_plot_finalise(
         frame,
@@ -337,7 +329,9 @@ def basic(release: AbsRelease) -> None:
         growth = pd.DataFrame()
         for years in BASIC_GROWTH_YEARS:
             post = ""
-            n_growth = ((series / series.shift(periods=years * QUARTERS_PER_YEAR)) ** (1 / years) - 1) * PERCENT
+            n_growth = ra.annualise_percentages(
+                ra.percent_change(series, years * QUARTERS_PER_YEAR), periods_per_year=1 / years
+            )
             if years >= LONG_RUN_YEARS:
                 n_growth = hma(n_growth.dropna(), LONG_RUN_HENDERSON)
                 post = f" ({LONG_RUN_HENDERSON}-term HMA)"
@@ -367,7 +361,7 @@ def final_demand(release: AbsRelease) -> None:
         series = release.data[ANALYTICAL][series_id].dropna()
         if series.empty:
             raise ValueError(f"No data for {sector} final demand")
-        growth[f"{sector} final demand"] = (series / series.shift(QUARTERS_PER_YEAR) - 1) * PERCENT
+        growth[f"{sector} final demand"] = ra.percent_change(series, QUARTERS_PER_YEAR)
     growth = growth.dropna()
     multi_start(
         growth,
@@ -413,7 +407,7 @@ def long_run_growth(release: AbsRelease) -> None:
         selector = {KEY_AGGS: mc.table, chart: mc.did, SA: mc.stype, CVM: mc.did, "$": mc.unit}
         _table, series_id, _units = ra.find_abs_id(release.meta, selector, verbose=False)
         q_gdp = data[series_id].dropna()
-        series = (q_gdp.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+        series = ra.percent_change(q_gdp, QUARTERS_PER_YEAR).dropna()
         lines = pd.DataFrame(
             {
                 "Annual growth": series,
@@ -442,7 +436,9 @@ def long_run_growth(release: AbsRelease) -> None:
                 size="x-small",
             )
 
-        annual = ((q_gdp / q_gdp.shift(DECADE_YEARS * QUARTERS_PER_YEAR)) ** (1 / DECADE_YEARS) - 1) * PERCENT
+        annual = ra.annualise_percentages(
+            ra.percent_change(q_gdp, DECADE_YEARS * QUARTERS_PER_YEAR), periods_per_year=1 / DECADE_YEARS
+        )
         annual.name = "Annual compound growth over decade"
         mg.line_plot(annual, ax=ax, color=["dodgerblue"], width=3)
         finalise_plot(
@@ -472,7 +468,7 @@ def trend_growth(release: AbsRelease) -> None:
         }
         _table, series_id, _units = ra.find_abs_id(release.meta, selector, verbose=False)
         trend = hma(data[series_id].dropna(), TREND_TERMS)
-        growth[label] = (trend.pct_change(periods=QUARTERS_PER_YEAR) * PERCENT).dropna()
+        growth[label] = ra.percent_change(trend, QUARTERS_PER_YEAR).dropna()
     frame = pd.DataFrame(growth)
     multi_start(
         frame,
@@ -550,7 +546,10 @@ def implicit_population(release: AbsRelease) -> None:
 
 def state_final_demand(release: AbsRelease) -> None:
     """State Final Demand in the latest quarter, per km² (with and without the ACT) and per person."""
-    sfd_units, sfd_data = _sfd(release)
+    sfd_rows = ra.search_abs_meta(release.meta, {SFD_SUMMARY: mc.table, SFD_DID: mc.did, SA: mc.stype})
+    sfd_units = sfd_rows[mc.unit].iloc[0]
+    sfd_data = release.data[SFD_SUMMARY][sfd_rows[mc.id]].rename_axis("Quarter")
+    sfd_data.columns = sfd_rows[mc.did].str.replace(SFD_DID, "").str.strip().tolist()  # one column per state
 
     # per km²
     areas = pd.Series(STATE_AREAS_KM2, name="Area (km²)")
@@ -634,6 +633,10 @@ def household_income(release: AbsRelease) -> None:
         annotate=True,
         title=f"Households: {' / '.join(HOUSEHOLD_ITEMS).title()}",
         ylabel="Per cent",
+        lheader=(
+            "Disposable income = total gross income less interest, taxes, "
+            "insurance premiums and other transfers payable"
+        ),
         rfooter=release.source,
         lfooter=f"{AUSTRALIA}{SA_NOTE}{CP_NOTE}{data_to(share)}",
         pre_tag="household_income-",

@@ -18,7 +18,6 @@ from au_econ.analysis.epochs import (
     governments_since,
     index_by_government,
     segment_by_government,
-    year_ended_growth,
 )
 from au_econ.charting.epochs import epoch_vlines
 from au_econ.charting.footers import SERIES_TYPE_NOTES
@@ -39,6 +38,7 @@ FIRST_RENT_GOVERNMENT = "Whitlam"  # the CPI rents series starts 1972Q3, the qua
 RENT_CAT, RENT_TABLE = "6401.0", "64010Appendix1a"
 
 ROUNDING = 1
+QUARTERS_PER_YEAR = 4
 
 
 # --- data
@@ -133,7 +133,7 @@ def cpi_cagr_path(govts: DataFrame) -> None:
 def cpi_yoy(govts: DataFrame) -> None:
     """Chart annual CPI inflation, coloured by the party in power at the time."""
     cpi, _units, stype = get_cpi("headline")
-    segments = segment_by_government(year_ended_growth(cpi), govts)
+    segments = segment_by_government(ra.percent_change(cpi, QUARTERS_PER_YEAR).dropna(), govts)
     index = segments.index
     if not isinstance(index, pd.PeriodIndex):
         raise TypeError(f"segments must have a PeriodIndex, got {type(index).__name__}")
@@ -156,7 +156,7 @@ def cpi_yoy(govts: DataFrame) -> None:
 def cpi_yoy_change(govts: DataFrame) -> None:
     """Chart the change in year-ended inflation across each government's term."""
     cpi, _units, stype = get_cpi("headline")
-    change = change_by_government(year_ended_growth(cpi), govts)
+    change = change_by_government(ra.percent_change(cpi, QUARTERS_PER_YEAR).dropna(), govts)
     mg.bar_plot_finalise(
         change.rename(index=_bar_labels),
         title="Inflation Rate by Government: Change Over Term (first vs last print)",

@@ -191,32 +191,20 @@ def _tenor(name: str, codes: dict[str, str], start: str) -> pd.DataFrame:
     return frame
 
 
-def _france() -> pd.DataFrame:
-    """France's yields with tenors as columns, on a common daily index from FRANCE_START."""
-    frame = pd.DataFrame({tenor: _yield("France", code) for tenor, code in FRANCE_CODES.items()})
-    frame = frame[frame.index >= pd.Period(FRANCE_START, freq="D")]
-    _report("France", frame)
-    return frame
-
-
-def _euro() -> pd.DataFrame:
-    """Euro-area benchmark 10-year yields, countries as columns, on a common daily index from EURO_START."""
-    frame = pd.DataFrame({country: investing.get_history(code) for country, code in EURO_CODES.items()})
-    frame = frame[frame.index >= pd.Period(EURO_START, freq="D")]
-    _report(EURO_TENOR, frame)
-    return frame
-
-
 def fetch() -> BondYields:
     """Fetch every tenor, China against the US, France, France against Germany, and the euro benchmarks."""
     tenors = {name: _tenor(name, codes, TENOR_STARTS[name]) for name, codes in CODES.items()}
-    return BondYields(
-        tenors=tenors,
-        china_us=_tenor(CHINA_US_TENOR, CHINA_US_CODES, CHINA_US_START),
-        france=_france(),
-        france_germany=_tenor(FRANCE_GERMANY_TENOR, FRANCE_GERMANY_CODES, FRANCE_START),
-        euro=_euro(),
-    )
+    china_us = _tenor(CHINA_US_TENOR, CHINA_US_CODES, CHINA_US_START)
+    # France: tenors as columns, on a common daily index from FRANCE_START
+    france = pd.DataFrame({tenor: _yield("France", code) for tenor, code in FRANCE_CODES.items()})
+    france = france[france.index >= pd.Period(FRANCE_START, freq="D")]
+    _report("France", france)
+    france_germany = _tenor(FRANCE_GERMANY_TENOR, FRANCE_GERMANY_CODES, FRANCE_START)
+    # euro-area benchmark 10-year yields: countries as columns, on a common daily index from EURO_START
+    euro = pd.DataFrame({country: investing.get_history(code) for country, code in EURO_CODES.items()})
+    euro = euro[euro.index >= pd.Period(EURO_START, freq="D")]
+    _report(EURO_TENOR, euro)
+    return BondYields(tenors=tenors, china_us=china_us, france=france, france_germany=france_germany, euro=euro)
 
 
 # --- helpers
@@ -239,7 +227,7 @@ def _data_to_footer(data: pd.DataFrame) -> str:
             raise TypeError(f"{country}: expected a daily PeriodIndex")
         ends.setdefault(last, []).append(ABBREVIATIONS.get(country, country))
     newest_first = sorted(ends.items(), reverse=True)
-    parts = [f"{_join_names(codes)} {end.strftime('%-d-%b-%Y')}" for end, codes in newest_first]
+    parts = [f"{_join_names(codes)} {end.strftime('%d-%b-%Y')}" for end, codes in newest_first]
     return f"Data to: {'; '.join(parts)}. "
 
 

@@ -46,28 +46,23 @@ class WageData:
     growth: pd.DataFrame
 
 
-def _through_the_year(series: pd.Series, lag: int = QUARTERS_PER_YEAR) -> pd.Series:
-    """Annual growth in per cent, matching on the period index.
-
-    Unlike a positional pct_change(), this compares each observation with the one exactly
-    `lag` quarters earlier, so it is right for a series that does not occupy every quarter
-    (AWOTE occupies only Q2 and Q4).
-    """
-    index = series.index
-    if not isinstance(index, pd.PeriodIndex):
-        raise TypeError(f"Expected a PeriodIndex, got {type(index).__name__}")
-    year_earlier = series.copy()
-    year_earlier.index = index.shift(lag)
-    return ((series / year_earlier - 1) * 100).dropna()
-
-
 def fetch() -> WageData:
     """Fetch the three measures and turn each into through-the-year growth."""
     wpi, _units, _stype = get_wage_index("WPI")
     awote, _units, _stype = get_wage_index("AWOTE")
     coe, _units = get_compensation_per_hour()
-    levels = {"WPI": wpi, "AWOTE": awote, "COE per hour": coe}
-    return WageData(growth=pd.DataFrame({name: _through_the_year(series) for name, series in levels.items()}))
+    # annual growth in per cent, matching on the period index: unlike a positional pct_change(),
+    # this compares each observation with the one exactly a year earlier, so it is right for a
+    # series that does not occupy every quarter (AWOTE occupies only Q2 and Q4)
+    growth = {}
+    for name, series in {"WPI": wpi, "AWOTE": awote, "COE per hour": coe}.items():
+        index = series.index
+        if not isinstance(index, pd.PeriodIndex):
+            raise TypeError(f"Expected a PeriodIndex, got {type(index).__name__}")
+        year_earlier = series.copy()
+        year_earlier.index = index.shift(QUARTERS_PER_YEAR)
+        growth[name] = ((series / year_earlier - 1) * 100).dropna()
+    return WageData(growth=pd.DataFrame(growth))
 
 
 # --- helpers

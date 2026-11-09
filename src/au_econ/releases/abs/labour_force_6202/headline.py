@@ -93,7 +93,7 @@ def summary(release: AbsRelease) -> None:
         )
         series = release.data[table][series_id]
         if periods:
-            series = series.pct_change(periods=periods, fill_method=None) * 100
+            series = ra.percent_change(series, periods)
         frame[label] = series
     summary_plot_finalise(
         frame,

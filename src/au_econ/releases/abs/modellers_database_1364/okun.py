@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
+import readabs as ra
 from mgplot import finalise_plot, line_plot, scatter_plot
 
 from au_econ.releases.abs.modellers_database_1364.common import (
@@ -45,7 +46,7 @@ def _okun_data(data: ModellersData) -> pd.DataFrame:
     labour_force, _ = data.used["labour_force"]
     rate = (unemployed / labour_force * PERCENT).dropna()
     return pd.DataFrame(
-        {"g": gdp.pct_change(QUARTERS_PER_YEAR) * PERCENT, "dur": rate - rate.shift(QUARTERS_PER_YEAR)}
+        {"g": ra.percent_change(gdp, QUARTERS_PER_YEAR), "dur": rate - rate.shift(QUARTERS_PER_YEAR)}
     ).dropna()
 
 

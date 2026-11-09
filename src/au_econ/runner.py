@@ -89,24 +89,6 @@ class ChartModule:
 
 
 # --- discovery
-def _set_cache_environment() -> None:
-    """Point readabs and sdmxabs at the package's caches; both read these once, at import."""
-    os.environ["READABS_CACHE_DIR"] = str(paths.READABS_CACHE)
-    os.environ["SDMXABS_CACHE_DIR"] = str(paths.SDMXABS_CACHE)
-
-
-def _import_all() -> list[ModuleType]:
-    """Import every module under the chart packages (importing a module must not fetch data)."""
-    found: list[ModuleType] = []
-    for package_name in CHART_PACKAGES:
-        package = importlib.import_module(package_name)
-        found.extend(
-            importlib.import_module(info.name)
-            for info in pkgutil.walk_packages(package.__path__, prefix=f"{package_name}.")
-        )
-    return found
-
-
 def _read_names(
     name: str, attribute: str, value: object, problems: list[str], *, allow_empty: bool
 ) -> tuple[str, ...] | None:
@@ -122,58 +104,49 @@ def _read_names(
     return None
 
 
-def _read_title(name: str, value: object, problems: list[str]) -> str | None:
-    """Read TITLE: a short readable name, safe as part of a folder name."""
-    if isinstance(value, str) and value and value == value.strip() and not TITLE_FORBIDDEN & set(value):
-        return value
-    problems.append(f"{name}: TITLE must be a non-empty string without surrounding spaces, '/' or ':'")
-    return None
-
-
-def _read_fetch(name: str, value: object, problems: list[str]) -> Callable[[], object] | None:
-    """Read fetch: a function taking no arguments."""
-    if callable(value):
-        return value
-    problems.append(f"{name}: fetch() is missing")
-    return None
-
-
-def _read_chart(name: str, entry: object, problems: list[str]) -> Chart | None:
-    """Read one CHARTS entry: (chart function, tuple of extra short names)."""
-    match entry:
-        case (function, tuple() as extras):
-            function_name = getattr(function, "__name__", None)
-            if callable(function) and isinstance(function_name, str) and all(isinstance(e, str) for e in extras):
-                return Chart(function_name.lower(), function, tuple(str(e).lower() for e in extras))
-    problems.append(f"{name}: CHARTS entry {entry!r} is not (chart function, tuple of names)")
-    return None
-
-
-def _read_charts(name: str, value: object, problems: list[str]) -> tuple[Chart, ...] | None:
-    """Read CHARTS: a non-empty tuple of entries whose function names do not repeat."""
-    if not (isinstance(value, tuple) and value):
-        problems.append(f"{name}: CHARTS must be a non-empty tuple of (chart function, extra names) pairs")
-        return None
-    read = [_read_chart(name, entry, problems) for entry in value]
-    charts = tuple(chart for chart in read if chart is not None)
-    if len(charts) < len(read):
-        return None
-    chart_names = [chart.name for chart in charts]
-    repeated = sorted({n for n in chart_names if chart_names.count(n) > 1})
-    if repeated:
-        problems.append(f"{name}: chart names repeat: {', '.join(repeated)}")
-        return None
-    return charts
-
-
 def _read_contract(module: ModuleType, problems: list[str]) -> ChartModule | None:
     """Read and check a chart module's RELEASE, TOPICS, TITLE, fetch and CHARTS."""
     name = module.__name__.removeprefix(PACKAGE_PREFIX)
     release = _read_names(name, "RELEASE", getattr(module, "RELEASE", None), problems, allow_empty=False)
     topics = _read_names(name, "TOPICS", getattr(module, "TOPICS", None), problems, allow_empty=True)
-    title = _read_title(name, getattr(module, "TITLE", None), problems)
-    fetch = _read_fetch(name, getattr(module, "fetch", None), problems)
-    charts = _read_charts(name, getattr(module, "CHARTS", None), problems)
+
+    # TITLE: a short readable name, safe as part of a folder name
+    title = getattr(module, "TITLE", None)
+    if not (isinstance(title, str) and title and title == title.strip() and not TITLE_FORBIDDEN & set(title)):
+        problems.append(f"{name}: TITLE must be a non-empty string without surrounding spaces, '/' or ':'")
+        title = None
+
+    # fetch: a function taking no arguments
+    fetch = getattr(module, "fetch", None)
+    if not callable(fetch):
+        problems.append(f"{name}: fetch() is missing")
+        fetch = None
+
+    # CHARTS: a non-empty tuple of (chart function, tuple of extra short names), function names unrepeated
+    entries = getattr(module, "CHARTS", None)
+    charts: tuple[Chart, ...] | None = None
+    if not (isinstance(entries, tuple) and entries):
+        problems.append(f"{name}: CHARTS must be a non-empty tuple of (chart function, extra names) pairs")
+    else:
+        read: list[Chart] = []
+        for entry in entries:
+            match entry:
+                case (function, tuple() as extras) if (
+                    callable(function)
+                    and isinstance(function_name := getattr(function, "__name__", None), str)
+                    and all(isinstance(e, str) for e in extras)
+                ):
+                    read.append(Chart(function_name.lower(), function, tuple(str(e).lower() for e in extras)))
+                case _:
+                    problems.append(f"{name}: CHARTS entry {entry!r} is not (chart function, tuple of names)")
+        if len(read) == len(entries):
+            chart_names = [chart.name for chart in read]
+            repeated = sorted({n for n in chart_names if chart_names.count(n) > 1})
+            if repeated:
+                problems.append(f"{name}: chart names repeat: {', '.join(repeated)}")
+            else:
+                charts = tuple(read)
+
     if release is None or topics is None or title is None or fetch is None or charts is None:
         return None
     return ChartModule(name, release, topics, title, fetch, charts)
@@ -218,11 +191,15 @@ def _discover() -> tuple[list[ChartModule], list[str]]:
     """Return every chart module, sorted by module path, and any contract problems."""
     problems: list[str] = []
     modules: list[ChartModule] = []
-    for module in _import_all():
-        if any(hasattr(module, marker) for marker in CONTRACT_MARKERS):
-            contract = _read_contract(module, problems)
-            if contract is not None:
-                modules.append(contract)
+    # import every module under the chart packages (importing a module must not fetch data)
+    for package_name in CHART_PACKAGES:
+        package = importlib.import_module(package_name)
+        for info in pkgutil.walk_packages(package.__path__, prefix=f"{package_name}."):
+            module = importlib.import_module(info.name)
+            if any(hasattr(module, marker) for marker in CONTRACT_MARKERS):
+                contract = _read_contract(module, problems)
+                if contract is not None:
+                    modules.append(contract)
     _check_run_sets(modules, problems)
     _check_variables(modules, problems)
     return sorted(modules, key=lambda m: m.name), problems
@@ -242,25 +219,6 @@ def _select_modules(name: str, modules: list[ChartModule]) -> list[ChartModule] 
     return selected
 
 
-def _select_charts(
-    wanted: list[str], modules: list[ChartModule]
-) -> list[tuple[ChartModule, tuple[Chart, ...]]] | None:
-    """Return the charts answering to the wanted names, or None if a name matches nothing."""
-    available = sorted({n for module in modules for chart in module.charts for n in chart.names})
-    unmatched = [w for w in wanted if w not in available]
-    if unmatched:
-        print(f"no chart in the selected modules answers to: {', '.join(unmatched)}", file=sys.stderr)
-        print(f"available: {', '.join(available)}", file=sys.stderr)
-        return None
-    plan: list[tuple[ChartModule, tuple[Chart, ...]]] = []
-    for module in modules:
-        charts = tuple(chart for chart in module.charts if chart.names & set(wanted))
-        if charts:
-            print(f"{module.folder_name}: {', '.join(chart.name for chart in charts)}")
-            plan.append((module, charts))
-    return plan
-
-
 def _plan(
     name: str | None, *, wanted: list[str], modules: list[ChartModule]
 ) -> list[tuple[ChartModule, tuple[Chart, ...]]] | None:
@@ -274,7 +232,20 @@ def _plan(
         return None
     if not wanted:
         return [(module, module.charts) for module in selected]
-    return _select_charts(wanted, selected)
+    # the charts answering to the wanted names; refused if a name matches nothing
+    available = sorted({n for module in selected for chart in module.charts for n in chart.names})
+    unmatched = [w for w in wanted if w not in available]
+    if unmatched:
+        print(f"no chart in the selected modules answers to: {', '.join(unmatched)}", file=sys.stderr)
+        print(f"available: {', '.join(available)}", file=sys.stderr)
+        return None
+    plan: list[tuple[ChartModule, tuple[Chart, ...]]] = []
+    for module in selected:
+        charts = tuple(chart for chart in module.charts if chart.names & set(wanted))
+        if charts:
+            print(f"{module.folder_name}: {', '.join(chart.name for chart in charts)}")
+            plan.append((module, charts))
+    return plan
 
 
 # --- execution
@@ -289,33 +260,6 @@ def _clear_images(folder: Path) -> None:
         for image in folder.rglob(f"*.{extension}"):
             if image.is_file():
                 image.unlink()
-
-
-def _clear_stale_folders(topic_folder: Path, current: set[str]) -> None:
-    """Delete the images in a topic folder's subfolders that no module in the run writes to."""
-    if not topic_folder.is_dir():
-        return
-    for folder in topic_folder.iterdir():
-        if folder.is_dir() and folder.name not in current:
-            _clear_images(folder)
-
-
-def _run_chart(chart: Chart, data: object) -> str | None:
-    """Run one chart function; return a description of its failure, or None on success."""
-    print(f"  {chart.name}")
-    try:
-        chart.function(data)
-    except Exception as exc:
-        traceback.print_exc()
-        plt.close("all")  # a chart that failed part-way may leave its figure open
-        return _describe(exc)
-    return None
-
-
-def _folder(root: Path, module: ChartModule, topic: str | None) -> Path:
-    """Return a module's chart folder, under the root or, for a topic run, under <root>/<topic>/."""
-    base = root / topic if topic else root
-    return base / module.folder_name
 
 
 def _run_module(module: ChartModule, charts: tuple[Chart, ...], folder: Path, *, clear: bool) -> Failures:
@@ -335,25 +279,14 @@ def _run_module(module: ChartModule, charts: tuple[Chart, ...], folder: Path, *,
         _clear_images(folder)
     failures: Failures = []
     for chart in charts:
-        failure = _run_chart(chart, data)
-        if failure is not None:
-            failures.append((chart.name, failure))
+        print(f"  {chart.name}")
+        try:
+            chart.function(data)
+        except Exception as exc:
+            traceback.print_exc()
+            plt.close("all")  # a chart that failed part-way may leave its figure open
+            failures.append((chart.name, _describe(exc)))
     return failures
-
-
-def _summarise(results: list[tuple[ChartModule, int, Failures]]) -> int:
-    """Print one line per module (and one per failed chart); return the exit code."""
-    print("\nSummary")
-    if not results:
-        print("  nothing to run")
-    for module, count, failures in results:
-        if not failures:
-            print(f"  ok    {module.folder_name} ({count} chart{'' if count == 1 else 's'})")
-            continue
-        print(f"  FAIL  {module.folder_name}: {len(failures)} of {count} charts failed")
-        for chart_name, message in failures:
-            print(f"          {chart_name}: {message}")
-    return EXIT_FAILED if any(failures for _, _, failures in results) else EXIT_OK
 
 
 # --- listings
@@ -423,7 +356,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # files only, never a window: the macOS default backend lays text out a few pixels
     # differently from Agg (which notebooks use), and launchd jobs have no window session
     mpl.use("Agg")
-    _set_cache_environment()  # before discovery imports any chart module, and so readabs
+    # point readabs and sdmxabs at the package's caches; both read these once, at import, so
+    # before discovery imports any chart module
+    os.environ["READABS_CACHE_DIR"] = str(paths.READABS_CACHE)
+    os.environ["SDMXABS_CACHE_DIR"] = str(paths.SDMXABS_CACHE)
     modules, problems = _discover()
     if problems:
         for problem in problems:
@@ -447,12 +383,29 @@ def _execute(
     root = paths.CHECK_DIR if check else paths.CHARTS_DIR
     if check:  # each check starts clean, so what is there afterwards is this run's work
         _clear_images(root)
-    if full and topic:  # folders of modules that have left the topic, so they leave nothing behind
-        _clear_stale_folders(root / topic, {module.folder_name for module, _charts in plan})
+    base = root / topic if topic else root  # a topic run writes under <root>/<topic>/
+    if full and topic and base.is_dir():
+        # the images of modules that have left the topic, so they leave nothing behind
+        current = {module.folder_name for module, _charts in plan}
+        for folder in base.iterdir():
+            if folder.is_dir() and folder.name not in current:
+                _clear_images(folder)
     results = [
-        (module, len(charts), _run_module(module, charts, _folder(root, module, topic), clear=full))
+        (module, len(charts), _run_module(module, charts, base / module.folder_name, clear=full))
         for module, charts in plan
     ]
     if check:
         print(f"\nCheck run: charts in {root.relative_to(paths.PROJECT_ROOT)}/; CHARTS/ untouched.")
-    return _summarise(results)
+
+    # one line per module, and one per failed chart
+    print("\nSummary")
+    if not results:
+        print("  nothing to run")
+    for module, count, failures in results:
+        if not failures:
+            print(f"  ok    {module.folder_name} ({count} chart{'' if count == 1 else 's'})")
+            continue
+        print(f"  FAIL  {module.folder_name}: {len(failures)} of {count} charts failed")
+        for chart_name, message in failures:
+            print(f"          {chart_name}: {message}")
+    return EXIT_FAILED if any(failures for _, _, failures in results) else EXIT_OK

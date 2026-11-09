@@ -35,18 +35,6 @@ def _current_url() -> str:
     return match.group(0)
 
 
-def _latest_cached() -> bytes:
-    """Return the newest cached workbook, by the date in its name (not alphabetical)."""
-    cached = sorted(
-        CACHE_DIR.glob(f"{FILE_PREFIX}*.xlsx"),
-        key=lambda path: pd.to_datetime(path.stem.removeprefix(FILE_PREFIX), format=FILE_DATE_FORMAT),
-    )
-    if not cached:
-        raise FileNotFoundError(f"AIP unreachable and no cached data in {CACHE_DIR}")
-    print(f"Using cached {cached[-1].name}")
-    return cached[-1].read_bytes()
-
-
 def get_workbook() -> bytes:
     """Return the current AIP TGP workbook, downloading it once; fall back to the newest cached one."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -54,7 +42,15 @@ def get_workbook() -> bytes:
         url = _current_url()
     except (requests.RequestException, FileNotFoundError) as err:
         print(f"WARNING: cannot reach AIP ({err})")
-        return _latest_cached()
+        # the newest cached workbook, by the date in its name (not alphabetical)
+        cached = sorted(
+            CACHE_DIR.glob(f"{FILE_PREFIX}*.xlsx"),
+            key=lambda path: pd.to_datetime(path.stem.removeprefix(FILE_PREFIX), format=FILE_DATE_FORMAT),
+        )
+        if not cached:
+            raise FileNotFoundError(f"AIP unreachable and no cached data in {CACHE_DIR}") from err
+        print(f"Using cached {cached[-1].name}")
+        return cached[-1].read_bytes()
     file = CACHE_DIR / url.rsplit("/", 1)[-1]
     if file.exists():
         print(f"Using cached: {file.name}")

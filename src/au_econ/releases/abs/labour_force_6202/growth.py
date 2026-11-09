@@ -143,7 +143,7 @@ def ft_pt_percent_growth(release: AbsRelease) -> None:
             series = series.dropna()
             if series.empty:
                 raise ValueError(f"No data for {did} ({stype})")
-            columns[label] = (series.pct_change(MONTHS_PER_YEAR) * 100).dropna()
+            columns[label] = ra.percent_change(series, MONTHS_PER_YEAR).dropna()
         multi_start(
             pd.DataFrame(columns),
             function=line_plot_finalise,
@@ -183,7 +183,7 @@ def employed_and_hours(release: AbsRelease) -> None:
             employed, _ = get_series(release, MAIN, EMPLOYED, stype)
             hours, _ = get_series(release, HOURS, HOURS_WORKED, stype)
             data = pd.concat([employed.rename("Employed Persons"), hours.rename("Hours worked in Month")], axis=1)
-            data = (data.pct_change(delta) * 100).dropna()
+            data = ra.percent_change(data, delta).dropna()
             multi_start(
                 data,
                 function=line_plot_finalise,

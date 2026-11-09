@@ -30,8 +30,12 @@ def _to_float(value: object) -> float:
     return float("nan")
 
 
-def _get(path: str, timeout: int) -> requests.Response:
-    """GET one series with its observations, retrying on timeouts and server errors."""
+def get_series(path: str, *, timeout: int = TIMEOUT) -> pd.Series:
+    """Return a DBnomics series with a PeriodIndex at its native frequency, missing values dropped.
+
+    timeout (seconds, per attempt) can be raised for series DBnomics is slow to serve cold.
+    """
+    # the series with its observations, retrying on timeouts and server errors
     for attempt in range(1, RETRIES + 1):
         last = attempt == RETRIES
         try:
@@ -45,16 +49,10 @@ def _get(path: str, timeout: int) -> requests.Response:
             time.sleep(SERVER_BACKOFF * attempt)
             continue
         response.raise_for_status()
-        return response
-    raise RuntimeError(f"DBnomics {path}: no response")
-
-
-def get_series(path: str, *, timeout: int = TIMEOUT) -> pd.Series:
-    """Return a DBnomics series with a PeriodIndex at its native frequency, missing values dropped.
-
-    timeout (seconds, per attempt) can be raised for series DBnomics is slow to serve cold.
-    """
-    docs = _get(path, timeout).json().get("series", {}).get("docs", [])
+        break
+    else:
+        raise RuntimeError(f"DBnomics {path}: no response")
+    docs = response.json().get("series", {}).get("docs", [])
     if not docs:
         raise ValueError(f"DBnomics {path}: no data")
     periods, values = docs[0].get("period", []), docs[0].get("value", [])

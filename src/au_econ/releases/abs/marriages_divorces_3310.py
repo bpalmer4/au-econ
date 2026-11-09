@@ -42,17 +42,6 @@ class MarriageData:
     divorces: pd.DataFrame
 
 
-def _find_year_row(frame: pd.DataFrame, value_cols: list[str]) -> int:
-    """Index of the header row carrying the reference years (the sheets come with a RangeIndex)."""
-    for index, row in frame.iterrows():
-        years = pd.to_numeric(row[value_cols], errors="coerce").dropna()
-        if len(years) == len(value_cols) and years.between(YEAR_MIN, YEAR_MAX).all():
-            if not isinstance(index, int):
-                raise TypeError(f"Expected an integer row index, got {type(index).__name__}")
-            return index
-    raise ValueError("Could not find the year header row")
-
-
 def _parse_table(frame: pd.DataFrame) -> pd.DataFrame:
     """One table as a year-indexed frame, columns keyed 'Section: Indicator'.
 
@@ -62,7 +51,17 @@ def _parse_table(frame: pd.DataFrame) -> pd.DataFrame:
     """
     label_col, unit_col = frame.columns[0], frame.columns[1]
     value_cols = list(frame.columns[2:])
-    year_row = _find_year_row(frame, value_cols)
+    # the header row carrying the reference years (the sheets come with a RangeIndex)
+    year_row: int | None = None
+    for index, row in frame.iterrows():
+        candidates = pd.to_numeric(row[value_cols], errors="coerce").dropna()
+        if len(candidates) == len(value_cols) and candidates.between(YEAR_MIN, YEAR_MAX).all():
+            if not isinstance(index, int):
+                raise TypeError(f"Expected an integer row index, got {type(index).__name__}")
+            year_row = index
+            break
+    if year_row is None:
+        raise ValueError("Could not find the year header row")
     header = frame.loc[year_row, value_cols]
     if not isinstance(header, pd.Series):
         raise TypeError(f"Expected one header row, got {type(header).__name__}")
