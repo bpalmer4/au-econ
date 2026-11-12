@@ -1,7 +1,7 @@
 """Bank for International Settlements, via the BIS SDMX API.
 
 Dataflows: policy rates (WS_CBPOL), property prices (WS_SPP), credit by sector (WS_TC),
-debt service ratios (WS_DSR).
+debt service ratios (WS_DSR), consumer prices (WS_LONG_CPI).
 One request covers every country ("+"-joined keys). The API sends no Last-Modified, so
 responses are cached for RECENT_MAX_AGE by file age.
 """
@@ -33,6 +33,8 @@ BORROWERS = {  # borrowing sector label: BIS code
 }
 VALUATIONS = {"market": "M", "nominal": "N"}  # valuation label: BIS code
 DEBT_SERVICE_URL = "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_DSR/1.0/Q.{areas}.H"  # households and NPISHs
+# monthly; index
+CONSUMER_PRICES_URL = "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_LONG_CPI/1.0/M.{areas}.628"
 
 
 def get_policy_rates(frequency: str, areas: Iterable[str], start: str) -> pd.DataFrame:
@@ -93,6 +95,22 @@ def get_household_debt_service_ratio(areas: Iterable[str]) -> pd.DataFrame:
     Interest and principal repayments by households and NPISHs as a share of their income.
     """
     return _quarterly_by_country(DEBT_SERVICE_URL.format(areas="+".join(areas)), "debt service ratio")
+
+
+def get_consumer_prices(areas: Iterable[str], start: str) -> pd.DataFrame:
+    """Return consumer price indexes, monthly from start (e.g. "2019-12"), one column per BIS country code.
+
+    The BIS long series: national CPIs, original (not seasonally adjusted).
+    """
+    url = CONSUMER_PRICES_URL.format(areas="+".join(areas))
+    content = get_recent(url, {"startPeriod": start, "format": "csv"}, "bis", RECENT_MAX_AGE, TIMEOUT)
+    rows = pd.read_csv(io.BytesIO(content))
+    if rows.empty:
+        raise ValueError(f"BIS consumer prices: no data from {start}")
+    wide = rows.pivot_table(index="TIME_PERIOD", columns="REF_AREA", values="OBS_VALUE")
+    wide.index = pd.PeriodIndex(wide.index, freq="M")
+    wide.columns.name = None
+    return wide.sort_index().astype(float)
 
 
 def get_property_price_indexes(value: str, areas: Iterable[str]) -> pd.DataFrame:
