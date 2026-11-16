@@ -87,7 +87,7 @@ section 4.
   because they combine publications or providers: `recessions.py`, `stagflation.py`,
   `neutral_rate.py`, `au_vs_us.py`, `bond_yields.py`, `energy_markets.py`,
   `house_price_drawdowns.py`, `wage_measures.py`, `wage_benchmark.py` (wage growth against
-  the 2.5% target plus productivity trend), `asx_indices.py`, `commodity_futures.py`,
+  the 2.5% target plus productivity trend), `asx_indices.py`, `us_indices.py`, `equity_growth.py`, `commodity_futures.py`,
   `domestic_family_violence.py`, `temporary_visa_workforce.py`, and the `political/`
   subpackage.
 

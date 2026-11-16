@@ -46,6 +46,8 @@ NEW_DWELLING_PURPOSES = {
 }
 NATIONAL_TABLES = {"Owner occupier": "560103", "Investor": "560113"}
 TOTAL_TABLE = "560101"
+BORROWERS = ("Owner occupier", "Investor")
+SINCE_2019 = pd.Period("2019Q1", freq="Q")
 MILLIONS = "$ Millions"
 MILLION = 1_000_000
 PERCENT = 100
@@ -125,6 +127,18 @@ def _new_dwellings(release: AbsRelease, borrower: str, table: str) -> pd.Series:
     return first
 
 
+def _borrower_numbers(release: AbsRelease) -> pd.DataFrame:
+    """Return SA numbers of new housing loans (excluding refinancing), by borrower type."""
+    return pd.DataFrame(
+        {
+            borrower: _sa_series(
+                release, TOTAL_TABLE, f"{borrower} ;  Total dwellings excluding refinancing", "Number"
+            )
+            for borrower in BORROWERS
+        }
+    ).dropna(how="all")
+
+
 def _freq_letter(index: pd.Index) -> str:
     """Return the frequency letter of a PeriodIndex ("Q", "M"), for per-period y-labels."""
     if not isinstance(index, pd.PeriodIndex):
@@ -151,6 +165,37 @@ def headline_charts(release: AbsRelease) -> None:
 def household_loan_numbers(release: AbsRelease) -> None:
     """Chart the number of new household housing loan commitments (excluding refinancing)."""
     _seastrend(release, HOUSING_DID + "  Number ;", dropna=True)
+
+
+def loan_numbers_by_borrower(release: AbsRelease) -> None:
+    """Chart the number of new housing loans for owner occupiers and investors."""
+    frame, units = ra.recalibrate(_borrower_numbers(release), "Number")
+    multi_start(
+        pd.DataFrame(frame),
+        function=line_plot_finalise,
+        starts=(0, SINCE_2019),
+        title="New Housing Loans: Owner Occupier and Investor",
+        ylabel=f"{units} / {_freq_letter(frame.index)}",
+        annotate=True,
+        legend=LEGEND_UPPER_LEFT,
+        lfooter="Australia. Seasonally adjusted. Excluding refinancing. Investor from 2019Q3. ",
+        rfooter=release.source,
+    )
+
+
+def loan_share_by_borrower(release: AbsRelease) -> None:
+    """Chart owner occupier and investor shares of the number of new housing loans."""
+    numbers = _borrower_numbers(release).dropna()
+    share = numbers.div(numbers.sum(axis=1), axis=0) * PERCENT
+    line_plot_finalise(
+        share,
+        title="Share of New Housing Loans: Owner Occupier and Investor",
+        ylabel="Per cent of loan numbers",
+        annotate=True,
+        legend=LEGEND_BEST,
+        lfooter="Australia. Seasonally adjusted. Excluding refinancing. ",
+        rfooter=release.source,
+    )
 
 
 def new_dwelling_value(release: AbsRelease) -> None:
@@ -308,6 +353,8 @@ def average_monthly_repayment(release: AbsRelease) -> None:
 CHARTS = (
     (headline_charts, ()),
     (household_loan_numbers, ()),
+    (loan_numbers_by_borrower, ()),
+    (loan_share_by_borrower, ()),
     (new_dwelling_value, ()),
     (new_dwelling_share, ()),
     (dwelling_type, ()),
