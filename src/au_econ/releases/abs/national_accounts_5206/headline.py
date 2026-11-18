@@ -8,6 +8,7 @@ import mgplot as mg
 import numpy as np
 import pandas as pd
 import readabs as ra
+from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 from mgplot import (
     finalise_plot,
     line_plot_finalise,
@@ -211,6 +212,12 @@ NFC_DEPRECIATION_DID = "Consumption of fixed capital ;"
 
 # labour share
 GDP_CP_DID = "Gross domestic product: Current prices ;"
+
+# nominal GDP and GDP per capita growth
+GDP_PER_CAPITA_CP_DID = "GDP per capita: Current prices ;"
+nominal_growth_starts = 0, pd.Period("2004Q1", freq="Q")
+LEVEL_TICK_STEPS = ((1.0, 2.0, 5.0), (2.0, 3.0, 4.0, 5.0, 7.0))  # per decade, for each of nominal_growth_starts
+FIXED_GROWTH_RATES = (4.2, 5.2)  # per cent a year, fitted since nominal_growth_starts[1]
 
 
 # --- helpers
@@ -544,6 +551,115 @@ def implicit_population(release: AbsRelease) -> None:
     )
 
 
+def nominal_growth(release: AbsRelease) -> None:
+    """Nominal GDP and nominal GDP per capita, original series: annual growth, full history and since 2004Q1."""
+    data = release.data[KEY_AGGS]
+    growth = {}
+    for label, did in (("Nominal GDP", GDP_CP_DID), ("Nominal GDP per capita", GDP_PER_CAPITA_CP_DID)):
+        _table, series_id, _units = ra.find_abs_id(
+            release.meta, {KEY_AGGS: mc.table, ORIGINAL: mc.stype, did: mc.did}, verbose=False
+        )
+        level = data[series_id].dropna()
+        if level.empty:
+            raise ValueError(f"No original series for '{did}' in {KEY_AGGS}")
+        growth[label] = ra.percent_change(level, QUARTERS_PER_YEAR)
+    frame = pd.DataFrame(growth).dropna()
+    multi_start(
+        frame,
+        function=line_plot_finalise,
+        starts=nominal_growth_starts,
+        title="Nominal GDP and GDP per capita: YoY growth",
+        ylabel="Per cent",
+        legend={"loc": "best", "fontsize": "x-small"},
+        annotate=True,
+        rfooter=release.source,
+        lfooter=f"{AUSTRALIA}{ORIGINAL_NOTE}{CP_NOTE}Compared with the same quarter in the previous year. "
+        f"{data_to(frame)}",
+        pre_tag="nominal-growth-",
+        y0=True,
+    )
+
+
+def _nominal_gdp_level(release: AbsRelease) -> tuple[pd.Series, str]:
+    """Nominal GDP, seasonally adjusted, recalibrated: the level and its units."""
+    _table, series_id, units = ra.find_abs_id(
+        release.meta, {KEY_AGGS: mc.table, SA: mc.stype, GDP_CP_DID: mc.did}, verbose=False
+    )
+    level = release.data[KEY_AGGS][series_id].dropna()
+    if level.empty:
+        raise ValueError(f"No seasonally adjusted series for '{GDP_CP_DID}' in {KEY_AGGS}")
+    return ra.recalibrate(level, units)
+
+
+def _log_level_chart(
+    frame: pd.DataFrame, steps: tuple[float, ...], *, title: str, units: str, release: AbsRelease, tag: str
+) -> None:
+    """Chart a level (first column, solid) and its fitted lines (dashed) on a log y-axis."""
+    fits = len(frame.columns) - 1
+    axes = mg.line_plot(frame, style=["-"] + ["--"] * fits, annotate=[True] + [False] * fits)
+    axes.set_yscale("log")  # resets the locators, so set the ticks after this
+    axes.yaxis.set_major_locator(LogLocator(base=10, subs=steps))
+    axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:g}"))
+    axes.yaxis.set_minor_formatter(NullFormatter())
+    finalise_plot(
+        axes,
+        title=title,
+        ylabel=f"{units} / Quarter (log scale)",
+        legend={"loc": "best", "fontsize": "x-small"},
+        rfooter=release.source,
+        lfooter=f"{AUSTRALIA}{SA_NOTE}{CP_NOTE}{data_to(frame.iloc[:, 0])}",
+        pre_tag="nominal-gdp-level-",
+        tag=tag,
+    )
+
+
+def gdp_level_trend(release: AbsRelease) -> None:
+    """Nominal GDP level on a log axis, with a least-squares constant growth line fitted over each window."""
+    level, units = _nominal_gdp_level(release)
+    for i, (start, steps) in enumerate(zip(nominal_growth_starts, LEVEL_TICK_STEPS, strict=True)):
+        window = level[start:] if isinstance(start, pd.Period) else level.iloc[start:]
+        quarters = np.arange(len(window))
+        slope, intercept = np.polyfit(quarters, np.log(window.to_numpy()), 1)
+        rate = (np.exp(slope * QUARTERS_PER_YEAR) - 1) * 100
+        frame = pd.DataFrame(
+            {
+                "Nominal GDP": window,
+                f"Least-squares constant growth: {rate:.1f}% a year": np.exp(intercept + slope * quarters),
+            },
+            index=window.index,
+        )
+        _log_level_chart(
+            frame,
+            steps,
+            title="Nominal GDP: level and constant growth fit",
+            units=units,
+            release=release,
+            tag=f"log-{i}",
+        )
+
+
+def gdp_level_fixed_growth(release: AbsRelease) -> None:
+    """Nominal GDP level since 2004Q1 on a log axis, with fixed growth rates at their best-fit levels."""
+    level, units = _nominal_gdp_level(release)
+    window = level[nominal_growth_starts[1] :]
+    quarters = np.arange(len(window))
+    log_level = np.log(window.to_numpy())
+    lines = {"Nominal GDP": window}
+    for rate in FIXED_GROWTH_RATES:
+        slope = np.log(1 + rate / 100) / QUARTERS_PER_YEAR
+        intercept = log_level.mean() - slope * quarters.mean()  # least squares with the slope fixed
+        fitted = pd.Series(np.exp(intercept + slope * quarters), index=window.index)
+        lines[f"Constant growth: {rate}% a year"] = fitted
+    _log_level_chart(
+        pd.DataFrame(lines),
+        LEVEL_TICK_STEPS[1],
+        title="Nominal GDP: level against fixed growth rates",
+        units=units,
+        release=release,
+        tag="fixed",
+    )
+
+
 def state_final_demand(release: AbsRelease) -> None:
     """State Final Demand in the latest quarter, per km² (with and without the ACT) and per person."""
     sfd_rows = ra.search_abs_meta(release.meta, {SFD_SUMMARY: mc.table, SFD_DID: mc.did, SA: mc.stype})
@@ -822,6 +938,9 @@ CHARTS = (
     (trend_growth, ()),
     (rolling_totals, ()),
     (implicit_population, ()),
+    (nominal_growth, ()),
+    (gdp_level_trend, ()),
+    (gdp_level_fixed_growth, ()),
     (state_final_demand, ()),
     (hfce_share, ()),
     (household_income, ()),
