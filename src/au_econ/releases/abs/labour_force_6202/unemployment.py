@@ -123,7 +123,7 @@ def sahm(release: AbsRelease) -> None:
         if start is not None:
             runs.append((start, index[-1]))
         spans: list[dict[str, Any]] = [
-            {"xmin": first, "xmax": last, "color": SAHM_COLOUR, "alpha": SAHM_ALPHA} for first, last in runs
+            {"xmin": first, "xmax": last + 1, "color": SAHM_COLOUR, "alpha": SAHM_ALPHA} for first, last in runs
         ]
         if spans:
             spans[0]["label"] = f"Growth > {threshold} percentage points over minimum through the year"
