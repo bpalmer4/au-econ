@@ -32,7 +32,8 @@ au-econ/
   .readabs_cache/            ABS and RBA files cached by readabs; safe to delete
   KEYS/                      API keys: fred.api, EIA-API-KEY.txt, webstat.api (never commit these)
   scratch/                   throwaway work; scratch/check/ holds --check runs
-  tools/                     chart comparison and footer checks (section 9)
+  tools/                     chart comparison and footer checks (section 9); quote.py, a quick
+                             chart of any Yahoo ticker (README)
   docs/                      this file
   src/au_econ/
     paths.py                 every folder location, anchored to the project root

@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 # --- constants
 PER_CENT_OF_LABOUR_FORCE = "Per cent of Labour Force"
-SAHM_THRESHOLDS = (0.5, 0.6)  # percentage points above the prior 12-month minimum
+SAHM_THRESHOLDS = (0.5, 0.6, 0.75)  # percentage points above the prior 12-month minimum
 SAHM_AVERAGE = 3  # months in the rolling average
 SAHM_COLOUR, SAHM_ALPHA = "darkorange", 0.5
 SAHM_LINE_COLOUR = "blue"
@@ -103,6 +103,7 @@ def sahm(release: AbsRelease) -> None:
     """Sahm rule: rises in the 3-month average unemployment rate over its prior 12-month minimum."""
     rate, _units = get_series(release, MAIN, UNEMPLOYMENT_RATE, SEASONALLY_ADJUSTED, exact_match=True)
     frame = pd.DataFrame()
+    distances = pd.DataFrame()  # how far the 3-month average sits above each trigger level
     for threshold in SAHM_THRESHOLDS:
         # shade the months the 3-month average rose more than threshold above its prior 12-month minimum
         average = rate.rolling(SAHM_AVERAGE).mean().rename("3 Month rolling average unemployment rate")
@@ -144,10 +145,11 @@ def sahm(release: AbsRelease) -> None:
             rheader=f"Last 3 UER: {recent['rate']};  "
             f"Last 3m MA: {recent['average']};  "
             f"Last 3m minimum: {recent['minimum']};  "
-            f"Forward headroom: {threshold - (average.iloc[-1] - minimum.iloc[-1]):.2f}",
+            f"Forward headroom: {threshold - (average.iloc[-1] - minimum.iloc[-1]):.3f}",
         )
         frame["Unemployment Rate 3 month MA"] = average
         frame[f"Prior 12 month minimum + {threshold}pp"] = prior_minimum + threshold
+        distances[f"Sahm rule at +{threshold}pp"] = average - (prior_minimum + threshold)
     line_plot_finalise(
         frame,
         title=f"Unemployment Rate: Sahm Thresholds at {', '.join(f'+{x}pp' for x in SAHM_THRESHOLDS)}",
@@ -155,8 +157,18 @@ def sahm(release: AbsRelease) -> None:
         y0=True,
         rfooter=release.source,
         lfooter=SAHM_LFOOTER,
-        width=[2, 1.5, 1.5],
-        style=["-", "-", "--"],
+        width=[2, 1.5, 1.5, 1.5],
+        style=["-", "-", "--", ":"],
+    )
+    line_plot_finalise(
+        distances,
+        title="Unemployment Rate: Sahm Rule Distance Above Thresholds",
+        ylabel="Percentage points",
+        y0=True,
+        annotate=True,
+        rounding=3,
+        rfooter=release.source,
+        lfooter=SAHM_LFOOTER,
     )
 
 

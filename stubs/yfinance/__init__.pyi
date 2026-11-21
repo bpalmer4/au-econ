@@ -8,10 +8,14 @@ def download(
     start: str | None = None,
     end: str | None = None,
     *,
+    interval: str = ...,
     auto_adjust: bool = ...,
     progress: bool = ...,
 ) -> pd.DataFrame | None: ...
 
 class Ticker:
+    info: dict[str, object]
+    splits: pd.Series
+    dividends: pd.Series
     def __init__(self, ticker: str) -> None: ...
     def history(self, period: str = ...) -> pd.DataFrame: ...

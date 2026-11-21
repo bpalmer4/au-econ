@@ -1,6 +1,7 @@
-"""Yahoo Finance: daily closing values (prices, yields, index levels), through yfinance.
+"""Yahoo Finance: closing values (prices, yields, index levels), through yfinance.
 
-Also forward curves: the latest close of each dated NYMEX contract for a futures root.
+Daily closes, closes at any Yahoo bar size, a ticker's description, and forward curves:
+the latest close of each dated NYMEX contract for a futures root.
 """
 
 import logging
@@ -14,17 +15,66 @@ RECENT_HISTORY = "5d"  # enough history to find a contract's latest close
 EARLIEST_START = "1970-01-02"  # before any Yahoo daily history; yfinance's default with no start is one month
 
 
-def get_close(ticker: str, start: str | None) -> pd.Series:
-    """Return a ticker's daily close from start (YYYY-MM-DD), or all of it if None, with a daily PeriodIndex."""
-    raw = yf.download(ticker, start=start or EARLIEST_START, auto_adjust=True, progress=False)
+def get_history(ticker: str, start: str | None, interval: str = "1d", *, adjusted: bool = True) -> pd.DataFrame:
+    """Return a ticker's bars (Open, High, Low, Close, Volume) at a Yahoo bar size (1m, 5m, 1h, 1d, 1wk ...).
+
+    From start (YYYY-MM-DD), or all of the history if start is None; bars without a close
+    are dropped. Prices are always adjusted for splits and capital changes such as
+    demergers (Yahoo scales earlier prices, recording no split), and also for dividends
+    unless adjusted is False. The index is Yahoo's DatetimeIndex: time-zone
+    aware (UTC) for intraday bars, naive dates for daily and longer bars.
+    """
+    raw = yf.download(
+        ticker, start=start or EARLIEST_START, interval=interval, auto_adjust=adjusted, progress=False
+    )
     if raw is None or len(raw) == 0:
         raise ValueError(f"Yahoo Finance returned no data for {ticker}")
-    close = raw["Close"].squeeze()
-    if not isinstance(close, pd.Series) or not isinstance(close.index, pd.DatetimeIndex):
-        raise TypeError(f"Yahoo Finance {ticker}: expected one dated column of closes")
-    close = close.dropna()
+    if raw.columns.nlevels > 1:  # one ticker: drop the ticker level under each field name
+        raw.columns = raw.columns.get_level_values(0)
+    if "Close" not in raw.columns or not isinstance(raw.index, pd.DatetimeIndex):
+        raise TypeError(f"Yahoo Finance {ticker}: expected dated bars with a Close column")
+    return raw.dropna(subset=["Close"])
+
+
+def get_close(ticker: str, start: str | None) -> pd.Series:
+    """Return a ticker's daily close from start (YYYY-MM-DD), or all of it if None, with a daily PeriodIndex."""
+    close = get_history(ticker, start)["Close"]
+    if not isinstance(close, pd.Series):
+        raise TypeError(f"Yahoo Finance {ticker}: expected one column of closes")
     close.index = pd.DatetimeIndex(close.index).to_period("D")
-    return close
+    return close.rename(ticker)
+
+
+def _actions(ticker: str, kind: str) -> pd.Series:
+    """Return one of a ticker's dated corporate-action series ("splits" or "dividends")."""
+    actions = getattr(yf.Ticker(ticker), kind)
+    if not isinstance(actions, pd.Series) or not isinstance(actions.index, pd.DatetimeIndex):
+        raise TypeError(f"Yahoo Finance {ticker}: expected dated {kind}")
+    actions = actions.copy()
+    index = actions.index
+    if not isinstance(index, pd.DatetimeIndex):  # narrows the copy's index for the type checker
+        raise TypeError(f"Yahoo Finance {ticker}: expected dated {kind}")
+    actions.index = (index.tz_localize(None) if index.tz is not None else index).normalize()
+    return actions
+
+
+def get_splits(ticker: str) -> pd.Series:
+    """Return a ticker's recorded splits: new shares per old share (below 1, a consolidation), by date.
+
+    Dates are the exchange's local dates, without a time zone. Yahoo records splits and some
+    capital returns with consolidations, but not demergers.
+    """
+    return _actions(ticker, "splits")
+
+
+def get_dividends(ticker: str) -> pd.Series:
+    """Return a ticker's dividends per share by ex-date (exchange local dates, no time zone)."""
+    return _actions(ticker, "dividends")
+
+
+def get_info(ticker: str) -> dict[str, object]:
+    """Return Yahoo's description of a ticker: name, currency, exchange time zone and more."""
+    return dict(yf.Ticker(ticker).info)
 
 
 def get_forward_curve(root: str, n_months: int) -> pd.DataFrame:

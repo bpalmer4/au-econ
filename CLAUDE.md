@@ -19,6 +19,7 @@ uv run run.py --topics          # the topic words
 uv run run.py --variables       # the shared short names for --charts
 uv run run.py --all             # everything
 uv run run.py --all --check     # test run into scratch/check/; CHARTS/ untouched
+uv run tools/quote.py [ticker] [market] [period] [interval] [--raw]   # one Yahoo price chart into CHARTS/quote/; defaults NVDA US 2y 1d, dividend-adjusted
 ```
 Each module writes to `CHARTS/<first release name> - <TITLE>/`; a topic run writes to
 `CHARTS/<topic>/<first release name> - <TITLE>/`. A full run of a module

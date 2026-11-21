@@ -47,6 +47,41 @@ What a run does to your existing charts:
 The summary at the end says `ok` or `FAIL` for each module, with the reason for each
 failure.
 
+## Quick price charts (`tools/quote.py`)
+
+A one-off chart of any Yahoo Finance ticker (shares, indexes, currencies, crypto), outside
+the module runs:
+
+```bash
+uv run tools/quote.py                      # defaults: NVDA, US market, 2 years, daily closes
+uv run tools/quote.py bhp ASX 6mo          # market sets the suffix: US, ASX, LSE, TSX, HK, TYO
+uv run tools/quote.py BTC-USD              # a symbol with a suffix or "=" is used as given
+uv run tools/quote.py ANT US 2d 5m         # interval: 1m, 5m, 15m, 30m, 1h, 1d, 1wk
+uv run tools/quote.py CBA ASX --raw        # prices not adjusted for dividends; saved as ...-raw.png
+                                           # (intraday charts add the bar size: ...-5m.png, ...-5m-raw.png)
+```
+
+By default past prices are adjusted for dividends (scaled down by later payouts), so the
+change shown is close to a total return; `--raw` leaves out the dividend adjustment but is
+still adjusted for splits and capital changes such as demergers (Yahoo scales earlier prices
+down, so a demerger shows no drop), so it matches the prices actually traded only since the
+last such event. The left footer states which when a dividend falls inside the chart's
+window; otherwise (crypto, currencies, shares paying nothing) the two are the same and the
+footer says nothing. Splits Yahoo records inside the chart's
+window are marked with dotted vertical lines, labelled with the ratio in the legend;
+demergers are not recorded, so they are not marked.
+
+The period is a number and a unit (`d`, `w`, `mo`, `y`). Yahoo keeps 1-minute bars for
+about 8 days, 5 to 30 minutes for 60 days and hourly for 730 days. Intraday charts run on
+clock time, with mgplot's axis: closed hours take their real width. On charts of a week or
+less they are left blank, as are gaps in Yahoo's data, so the line breaks at each close;
+longer charts join across closes, as daily charts do across weekends. Intraday and weekly axes need mgplot 0.3.5 or
+later. Bars with no volume and no price movement,
+such as the offer price Yahoo shows before a new listing's first trade, are left out of the
+line; when that bar opens the series, the offer price is drawn as a dashed reference line and
+the footer adds the return on it. The
+chart is saved to `CHARTS/quote/` and its path printed.
+
 ## Checking data availability (`--check`)
 
 `--check` makes a complete test run that cannot touch your charts. It runs everything
@@ -118,5 +153,5 @@ keep the output short.
 | `CACHE/`, `.readabs_cache/`, `.sdmxabs_cache/` | downloaded data; safe to delete (refetched next run) |
 | `KEYS/` | API keys (never commit) |
 | `scratch/check/` | `--check` runs |
-| `tools/` | chart comparison and footer checks |
+| `tools/` | chart comparison, footer checks and quick price charts (`quote.py`) |
 | `docs/` | how-it-works.md |
