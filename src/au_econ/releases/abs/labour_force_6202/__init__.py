@@ -2,7 +2,7 @@
 
 Headline, unemployment, growth, breakeven, state, gender and revisions charts, and the
 monthly detail that moved here from the ceased 6291.0.55.001 in April 2026: age groups,
-capital cities and country of birth (the last two from the LMS data cubes). Only four
+capital cities and country of birth (the last two from the LMS data cubes). Only five
 tables are read up front (see common.TABLES): the whole release is huge and slow to load.
 """
 
@@ -14,6 +14,7 @@ from au_econ.releases.abs.labour_force_6202 import (
     gender,
     growth,
     headline,
+    industry,
     regions,
     revisions,
     states,
@@ -48,5 +49,6 @@ CHARTS = (
     *age.CHARTS,
     *regions.CHARTS,
     *birthplace.CHARTS,
+    *industry.CHARTS,
     *revisions.CHARTS,
 )

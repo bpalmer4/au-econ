@@ -16,7 +16,9 @@ MAIN = "62020001"  # labour force status by sex, Australia
 HOURS = "62020017"  # hours worked by state and sex
 UNDERUTILISED = "62020X28"  # underutilised persons by state and sex; also the state employment series
 AGE = "62020011"  # labour force status by age and sex, Original (was 6291.0.55.001 table 1)
-TABLES = (MAIN, HOURS, UNDERUTILISED, AGE)
+INDUSTRY = "62020021_MTH"  # employed persons by state and industry division, Original, monthly
+OCCUPATION = "62020023_MTH"  # employed persons by occupation major group (OSCA) and sex, Original, monthly
+TABLES = (MAIN, HOURS, UNDERUTILISED, AGE, INDUSTRY, OCCUPATION)
 
 # --- series types and units
 TREND, SEASONALLY_ADJUSTED, ORIGINAL = "Trend", "Seasonally Adjusted", "Original"
