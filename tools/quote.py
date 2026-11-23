@@ -26,6 +26,7 @@ from au_econ.sources import yahoo
 DEFAULTS = ("NVDA", "US", "2y", "1d")
 RAW_OPTION = "--raw"
 BASIS = {True: "Adjusted for dividends.", False: "Not adjusted for dividends."}  # by adjusted
+INDEX_TYPE, INDEX_UNIT = "INDEX", "Index points"  # Yahoo quoteType of an index, and its y-axis unit
 MARKET_SUFFIX = {"US": "", "ASX": ".AX", "LSE": ".L", "TSX": ".TO", "HK": ".HK", "TYO": ".T"}
 PERIOD_OFFSETS = {
     "d": lambda n: pd.DateOffset(days=n),
@@ -85,6 +86,7 @@ info = yahoo.get_info(symbol)
 long_name, short_name = info.get("longName"), info.get("shortName")
 name = long_name if isinstance(long_name, str) else short_name if isinstance(short_name, str) else symbol
 currency = info.get("currency")
+unit = INDEX_UNIT if info.get("quoteType") == INDEX_TYPE else currency  # an index is in points, not money
 timezone = info.get("exchangeTimezoneName")
 times = close.index
 if not isinstance(times, pd.DatetimeIndex):
@@ -109,7 +111,7 @@ close, scale = ra.recalibrate(close, "Number")
 close = close.rename("Price")
 finalise: mg.FinaliseKwargs = {
     "title": f"{name} ({symbol})",
-    "ylabel": " ".join(part for part in (currency, scale) if isinstance(part, str) and part != "Number"),
+    "ylabel": " ".join(part for part in (unit, scale) if isinstance(part, str) and part != "Number"),
     "lfooter": lfooter,
     "rfooter": "Yahoo Finance",
     "legend": False,

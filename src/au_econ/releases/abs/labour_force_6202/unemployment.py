@@ -26,27 +26,91 @@ from au_econ.releases.abs.labour_force_6202.common import (
     line_starts,
 )
 from au_econ.series.labour import get_unemployment_backcast_stats, get_unemployment_rate
-from au_econ.series.rates import get_cash_rate
+from au_econ.series.rates import INTERBANK_TABLE, get_cash_rate, get_interbank_rate
 
 if TYPE_CHECKING:
     from au_econ.sources.abs import AbsRelease
 
 # --- constants
 PER_CENT_OF_LABOUR_FORCE = "Per cent of Labour Force"
-SAHM_THRESHOLDS = (0.5, 0.6, 0.75)  # percentage points above the prior 12-month minimum
+SAHM_THRESHOLDS = (0.5, 0.75)  # percentage points above the prior 12-month minimum
 SAHM_AVERAGE = 3  # months in the rolling average
 SAHM_COLOUR, SAHM_ALPHA = "darkorange", 0.5
 SAHM_LINE_COLOUR = "blue"
 SAHM_LFOOTER = (
-    "Australia. Seasonally adjusted. Monthly data. "
-    "Current 3m MA compared with minimum over the prior 12 months (from current-12 to current-1)."
+    "Australia. Seasonally adjusted. Monthly data. Current 3m MA vs prior 12-month minimum (months -12 to -1)."
 )
 SAHM_RHEADER_VALUES = 3  # latest values shown in the header
+POLICY_MONTHS = 6  # the backplane shades the change in the interbank rate over this many months
+POLICY_DEADBAND = 0.1  # percentage points: smaller changes are left unshaded
+POLICY_STEPS = (1.0, 2.0)  # percentage points where the shading steps darker
+POLICY_ALPHAS = (0.08, 0.16, 0.25)  # one alpha per step, smallest change first
+POLICY_DIRECTIONS = {"Tightening": "tab:red", "Easing": "tab:green"}
+POLICY_LHEADER = f"Shaded by the {POLICY_MONTHS}-month change in the interbank overnight rate"
 CONDITIONS_THRESHOLD = 0.025  # turning-point threshold, percentage points
 CONDITIONS_FROM = pd.Period("2001-08", freq="M")
 HARDER, EASIER = "Getting harder to find a job", "Getting easier to find a job"
 CONDITIONS = (("up", HARDER), ("down", EASIER), ("both", (HARDER, EASIER)))  # direction, highlight label
 OCR_COMPARISON_FROM = "1993-01-01"
+
+
+# --- helpers
+def _policy_spans(index: pd.PeriodIndex) -> list[dict[str, Any]]:
+    """Return finalise_plot axvspan dicts shading the months in index by monetary policy direction.
+
+    Each month is shaded by the change in the interbank overnight rate over the POLICY_MONTHS
+    to it: red for tightening, green for easing, darker at each of POLICY_STEPS, and unshaded
+    within POLICY_DEADBAND of no change. Zero-width labelled key spans lead, for the legend;
+    then one span per run of consecutive months at the same direction and step.
+    """
+    rate = get_interbank_rate()
+    change = (rate - rate.shift(POLICY_MONTHS)).reindex(index)
+    edges = (POLICY_DEADBAND, *POLICY_STEPS)
+    spans: list[dict[str, Any]] = []
+    for direction, colour in POLICY_DIRECTIONS.items():
+        for step, alpha in enumerate(POLICY_ALPHAS):
+            label = (
+                f"{direction} {edges[step]:g}pp+"
+                if step + 1 == len(edges)
+                else f"{direction} {edges[step]:g}-{edges[step + 1]:g}pp"
+            )
+            spans.append(
+                {
+                    "xmin": index[0],
+                    "xmax": index[0],
+                    "color": colour,
+                    "alpha": alpha,
+                    "linewidth": 0,
+                    "label": label,
+                }
+            )
+
+    # (direction, step) for each month; None where unshaded
+    shades = [
+        None
+        if pd.isna(value) or abs(value) <= POLICY_DEADBAND
+        else ("Tightening" if value > 0 else "Easing", sum(abs(value) >= edge for edge in POLICY_STEPS))
+        for value in change.to_numpy(dtype=float)
+    ]
+    run_start = 0
+    for position in range(1, len(shades) + 1):
+        if position < len(shades) and shades[position] == shades[run_start]:
+            continue
+        shade = shades[run_start]
+        if shade is not None:
+            direction, step = shade
+            spans.append(
+                {
+                    "xmin": index[run_start],
+                    "xmax": index[position - 1] + 1,
+                    "color": POLICY_DIRECTIONS[direction],
+                    "alpha": POLICY_ALPHAS[step],
+                    "linewidth": 0,
+                    "zorder": 0,
+                }
+            )
+        run_start = position
+    return spans
 
 
 # --- charts
@@ -169,6 +233,23 @@ def sahm(release: AbsRelease) -> None:
         rounding=3,
         rfooter=release.source,
         lfooter=SAHM_LFOOTER,
+    )
+    distances = distances.dropna(how="all")  # the first 3 + 12 months have no indicator
+    distance_index = distances.index
+    if not isinstance(distance_index, pd.PeriodIndex):
+        raise TypeError(f"Expected a PeriodIndex, got {type(distance_index).__name__}")
+    ax = line_plot(distances, annotate=True, rounding=3)
+    finalise_plot(
+        ax,
+        title="Unemployment Rate: Sahm Rule Distance Above Thresholds",
+        ylabel="Percentage points",
+        y0=True,
+        axvspan=_policy_spans(distance_index),
+        legend={"loc": "upper right", "fontsize": "x-small", "ncol": 2},
+        lheader=POLICY_LHEADER,
+        rfooter=f"{release.source}; RBA: {INTERBANK_TABLE}",
+        lfooter=SAHM_LFOOTER,
+        tag="monetary-policy",
     )
 
 

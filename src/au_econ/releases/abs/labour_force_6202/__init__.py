@@ -17,6 +17,7 @@ from au_econ.releases.abs.labour_force_6202 import (
     industry,
     regions,
     revisions,
+    rotation,
     states,
     unemployment,
 )
@@ -42,6 +43,7 @@ def fetch() -> AbsRelease:
 CHARTS = (
     *headline.CHARTS,
     *unemployment.CHARTS,
+    *rotation.CHARTS,
     *growth.CHARTS,
     *breakeven.CHARTS,
     *states.CHARTS,

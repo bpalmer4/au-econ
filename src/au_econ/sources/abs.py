@@ -5,6 +5,7 @@ not time-series tables, so readabs does not read them) are found on their releas
 and downloaded through http_cache.
 """
 
+import io
 import re
 from dataclasses import dataclass
 from functools import cache
@@ -17,7 +18,7 @@ import requests
 import sdmxabs as sa
 from readabs.get_abs_links import get_abs_links
 
-from au_econ.sources.http_cache import get_file
+from au_econ.sources.http_cache import HttpError, get_file, get_recent
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,6 +41,18 @@ CPI_ROOT = "All groups CPI"
 PIVOT_DATA_SHEET = "Data 1"  # suffix of the data sheet's name
 PIVOT_PERIOD = "month"  # the header row's first cell names the period: "Month", "Mid-quarter month"
 PIVOT_MEASURE = "('000)"  # measure columns end with their unit
+
+# Labour Force rotation groups: a table in each monthly release's commentary (not in any workbook)
+LFS_RELEASE_PAGE = f"{ABS_SITE}/statistics/labour/employment-and-unemployment/labour-force-australia/"
+ROTATION_FIRST = pd.Period("2020-07", freq="M")  # the first release with the table
+ROTATION_KEY = "rotation"  # in the table's column headings
+ROTATION_MEASURES = (  # (row label keyword, measure), checked in order: full-time before employment
+    ("unemployment", "Unemployment rate"),
+    ("participation", "Participation rate"),
+    ("full-time", "Full-time employment to population ratio"),
+    ("employ", "Employment to population ratio"),  # one release spells it "employement"
+)
+REPLACED, INCOMING, OUTGOING, ESTIMATE = "Replaced", "Incoming", "Outgoing", "Estimate"
 
 
 @dataclass(frozen=True)
@@ -182,3 +195,69 @@ def cpi_names(level: str, root: str = CPI_ROOT) -> list[str]:
         return False
 
     return [item.name for code, item in hierarchy.items() if item.level == level and under_root(code)]
+
+
+def _rotation_table(url: str, page: bytes, month: pd.Period) -> pd.DataFrame:
+    """Parse one release page's rotation group table: rows are groups, columns measures, in per cent."""
+    found = [
+        table
+        for table in pd.read_html(io.StringIO(page.decode()))
+        if ROTATION_KEY in " ".join(map(str, table.columns)).lower()
+    ]
+    if len(found) != 1:
+        raise ValueError(f"ABS {url}: expected one rotation group table, found {len(found)}")
+    table = found[0].set_index(found[0].columns[0])
+
+    # columns by heading: "<Month> incoming rotation group", "<previous month> outgoing ...", "... estimate"
+    month_name = month.strftime("%B").lower()
+    groups: dict[str, str] = {}
+    for heading in map(str, table.columns):
+        text = heading.lower()
+        if "estimate" in text:
+            groups[heading] = ESTIMATE
+        elif "incoming" in text:
+            groups[heading] = INCOMING
+        elif "outgoing" in text:
+            groups[heading] = OUTGOING if text.startswith(month_name) else REPLACED
+        else:
+            raise ValueError(f"ABS {url}: unexpected rotation group heading {heading!r}")
+    measures: dict[str, str] = {}
+    for label in map(str, table.index):
+        measure = next((name for key, name in ROTATION_MEASURES if key in label.lower()), None)
+        if measure is None:
+            raise ValueError(f"ABS {url}: unexpected rotation group row {label!r}")
+        measures[label] = measure
+    if len(set(groups.values())) != len(groups) or len(set(measures.values())) != len(measures):
+        raise ValueError(f"ABS {url}: repeated rotation groups or measures: {groups}, {measures}")
+    values = table.rename(index=measures, columns=groups).T.rename_axis(columns=None)
+    return values.apply(lambda column: column.astype(str).str.rstrip("%").astype(float))
+
+
+@cache
+def _rotation_groups() -> pd.DataFrame:
+    """Read the rotation group table from every Labour Force release since July 2020 (cached; not for mutation)."""
+    latest = pd.Period.now("M") - 1  # the latest release month that may be out
+    tables: dict[pd.Period, pd.DataFrame] = {}
+    for month in pd.period_range(ROTATION_FIRST, latest, freq="M"):
+        url = f"{LFS_RELEASE_PAGE}{month.strftime('%b-%Y').lower()}"
+        try:
+            page = get_recent(url, None, "abs-lfs", None, headers=HEADERS)  # a past release never changes
+        except HttpError:
+            if month == latest:  # not published yet
+                break
+            raise
+        tables[month] = _rotation_table(url, page, month)
+    if not tables:
+        raise ValueError("ABS: no Labour Force rotation group tables")
+    return pd.concat(tables, names=["Month", "Group"])
+
+
+def get_rotation_groups() -> pd.DataFrame:
+    """Return the Labour Force rotation group table for every month since July 2020: Original, per cent.
+
+    Indexed by (Month, Group). Group is REPLACED (the previous month's outgoing group, which the
+    incoming group replaced), INCOMING, OUTGOING or ESTIMATE (the published estimate); the
+    columns are the measures in ROTATION_MEASURES. A month lacks any group the ABS did not
+    report: there was no outgoing group in July 2026, so August 2026 has no replaced group.
+    """
+    return _rotation_groups().copy()
