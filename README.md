@@ -49,14 +49,17 @@ failure.
 
 ## Quick price charts (`tools/quote.py`)
 
-A one-off chart of any Yahoo Finance ticker (shares, indexes, currencies, crypto), outside
-the module runs:
+A one-off candle chart (red/green open-high-low-close bars) of any Yahoo Finance ticker
+(shares, indexes, currencies, crypto), outside the module runs:
 
 ```bash
-uv run tools/quote.py                      # defaults: NVDA, US market, 2 years, daily closes
+uv run tools/quote.py                      # defaults: NVDA, US market, 2 years, daily bars
 uv run tools/quote.py bhp ASX 6mo          # market sets the suffix: US, ASX, LSE, TSX, HK, TYO
 uv run tools/quote.py BTC-USD              # a symbol with a suffix or "=" is used as given
-uv run tools/quote.py ANT US 2d 5m         # interval: 1m, 5m, 15m, 30m, 1h, 1d, 1wk
+uv run tools/quote.py ANT US 2d 5m         # interval: 1m, 2m, 5m, 15m, 30m, 1h, 1d, 1wk
+uv run tools/quote.py NVDA US 6mo --ma     # moving averages: 50/200-day (daily), 10/40-week, 20-bar intraday
+uv run tools/quote.py NVDA US 1w 1h --ma=7 # your own windows, in bars
+uv run tools/quote.py NVDA US 6mo --macd   # a 12/26/9 MACD panel under the candles, in % of price
 uv run tools/quote.py CBA ASX --raw        # prices not adjusted for dividends; saved as ...-raw.png
                                            # (intraday charts add the bar size: ...-5m.png, ...-5m-raw.png)
 ```
@@ -71,14 +74,19 @@ footer says nothing. Splits Yahoo records inside the chart's
 window are marked with dotted vertical lines, labelled with the ratio in the legend;
 demergers are not recorded, so they are not marked.
 
+The moving averages and MACD are calculated from history fetched before the chart starts,
+so they are settled at its first bar; where Yahoo keeps no such history (its short intraday
+limits), the tool says so and they start part-way in. Their charts save as `...-ma.png`,
+`...-macd.png` or `...-ma-macd.png`, beside the plain chart.
+
 The period is a number and a unit (`d`, `w`, `mo`, `y`). Yahoo keeps 1-minute bars for
-about 8 days, 5 to 30 minutes for 60 days and hourly for 730 days. Intraday charts run on
-clock time, with mgplot's axis: closed hours take their real width. On charts of a week or
-less they are left blank, as are gaps in Yahoo's data, so the line breaks at each close;
-longer charts join across closes, as daily charts do across weekends. Intraday and weekly axes need mgplot 0.3.5 or
-later. Bars with no volume and no price movement,
+about 8 days, 2 to 30 minutes for 60 days and hourly for 730 days. Each bar takes one slot
+on the x-axis, so closed hours, weekends and holidays take no space; a light grey line marks
+each session boundary, including gaps in Yahoo's data. Candle charts need mgplot 0.3.6 or
+later. Bars with no volume and no price movement at the start of the data,
 such as the offer price Yahoo shows before a new listing's first trade, are left out of the
-line; when that bar opens the series, the offer price is drawn as a dashed reference line and
+chart (later flat bars, such as the ASX pre-close before the 16:10 closing auction, are kept);
+when that bar opens the series, the offer price is drawn as a dashed reference line and
 the footer adds the return on it. The
 chart is saved to `CHARTS/quote/` and its path printed.
 

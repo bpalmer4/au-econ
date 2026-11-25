@@ -316,7 +316,7 @@ def quarterly_trend_fit(release: AbsRelease) -> None:
             rounding=NOISE_ROUNDING,
             axhline=QUARTERLY_CPI_TARGET,
             legend={"loc": "best", "fontsize": "x-small"},
-            lfooter=f"Australia. {SERIES_TYPE_NOTES[NOISE[str(label)][2]]}{TREND_NOTE}",
+            lfooter=f"Australia. {SERIES_TYPE_NOTES[NOISE[str(label)][2]]} {TREND_NOTE}",
             rfooter=release.source,
             y0=True,
         )
