@@ -1,11 +1,13 @@
 """Neutral rate proxies: the AOFM and NY Fed 5y5y risk-neutral forwards, the cash rate and trend growth.
 
 The AOFM forward is set against the cash rate and trend growth, then beside the US (NY Fed
-ACM) forward. 5y5y = 2 x RNY10 - RNY5: the average expected short rate over the five years beginning five
-years from now, with the term premium removed by an affine model. Neither line is r*: the
-forward is a price, and trend per-capita growth plus the inflation target is the golden-rule
-statement of where a nominal neutral rate should sit. The AOFM series is re-estimated in
-full every month, so it is not a real-time series.
+ACM) forward, then each is charted daily on its own. 5y5y = 2 x RNY10 - RNY5: the average
+expected short rate over the five years beginning five years from now, with the term premium
+removed by an affine model. Neither line is r*: the forward is a price, and trend per-capita
+growth plus the inflation target is the golden-rule statement of where a nominal neutral
+rate should sit. The AOFM series is re-estimated in full every month, so it is not a
+real-time series. The last chart is the AOFM's 10-year term premium, daily: the fitted yield
+less the risk-neutral yield.
 """
 
 # --- dependencies
@@ -16,6 +18,7 @@ import pandas as pd
 import readabs as ra
 from readabs import metacol as mc
 
+from au_econ.charting.footers import data_to
 from au_econ.series.rates import get_cash_rate
 from au_econ.sources import aofm, nyfed
 from au_econ.sources.abs import fetch_release
@@ -202,8 +205,51 @@ def forward_comparison(data: NeutralRateData) -> None:
     )
 
 
+def daily_lines(data: NeutralRateData) -> None:
+    """Chart the AOFM and ACM 5y5y forwards and the AOFM 10-year term premium, daily, each on its own."""
+    aofm_note = f"bias-corrected ({AOFM_METHOD.upper()}). "
+    lines = (  # series, title, ylabel, lfooter, rfooter
+        (
+            _five_year_five_year(data.aofm["RNY5"], data.aofm["RNY10"]),
+            "Australia: 5y5y Risk-Neutral Forward",
+            "Per cent, nominal",
+            f"Australia. Daily. 2 x RNY10 - RNY5, {aofm_note}",
+            "AOFM: term premium",
+        ),
+        (
+            _five_year_five_year(data.acm["ACMRNY05"], data.acm["ACMRNY10"]),
+            "United States: 5y5y Risk-Neutral Forward",
+            "Per cent, nominal",
+            "United States. Daily. 2 x RNY10 - RNY5, plain ACM. ",
+            "NY Fed: ACM",
+        ),
+        (
+            data.aofm["TP10"].dropna(),
+            "Australia: 10-Year Term Premium",
+            "Percentage points",
+            f"Australia. Daily. Fitted yield less risk-neutral yield, {aofm_note}",
+            "AOFM: term premium",
+        ),
+    )
+    for series, title, ylabel, lfooter, rfooter in lines:
+        daily = series.set_axis(pd.PeriodIndex(series.index, freq="D"))
+        mg.line_plot_finalise(
+            daily,
+            title=title,
+            ylabel=ylabel,
+            xlabel=None,
+            annotate=True,
+            rounding=2,
+            y0=True,
+            rheader=data_to(daily),
+            lfooter=lfooter,
+            rfooter=rfooter,
+        )
+
+
 # --- table of contents, in run order
 CHARTS = (
     (rstar_proxies, ()),
     (forward_comparison, ()),
+    (daily_lines, ()),
 )

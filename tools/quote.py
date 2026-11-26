@@ -1,7 +1,8 @@
 """Chart a listed security's recent prices from Yahoo Finance as candles, and print the chart's path.
 
 Each bar is a red or green candle (open, high, low, close); closed hours, weekends and holidays
-take no space, and a light grey line marks each session boundary.
+take no space, and a light grey line marks each session boundary. Times are Sydney time, named
+in the footer of an intraday chart.
 
 Usage: uv run tools/quote.py [ticker] [market] [period] [interval] [--raw] [--ma[=N,N...]] [--macd]
   ticker    Yahoo symbol, default NVDA; one already carrying a suffix (BHP.AX, AUDUSD=X) is used as is
@@ -51,6 +52,7 @@ LINE_WIDTH = 1.0  # points: indicator lines kept thin over the candles (rather t
 UP_COLOR, DOWN_COLOR = "#2ca02c", "#d62728"  # the candles' green and red, for the MACD histogram
 BASIS = {True: "Adjusted for dividends.", False: "Not adjusted for dividends."}  # by adjusted
 INDEX_TYPE, INDEX_UNIT = "INDEX", "Index points"  # Yahoo quoteType of an index, and its y-axis unit
+DISPLAY_TIMEZONE = "Australia/Sydney"
 MARKET_SUFFIX = {"US": "", "ASX": ".AX", "LSE": ".L", "TSX": ".TO", "HK": ".HK", "TYO": ".T"}
 PERIOD_OFFSETS = {
     "d": lambda n: pd.DateOffset(days=n),
@@ -151,13 +153,12 @@ name = long_name if isinstance(long_name, str) else short_name if isinstance(sho
 currency = info.get("currency")
 unit = INDEX_UNIT if info.get("quoteType") == INDEX_TYPE else currency  # an index is in points, not money
 level = "index" if info.get("quoteType") == INDEX_TYPE else "price"  # what the MACD is a percentage of
-timezone = info.get("exchangeTimezoneName")
 times = ohlc.index
-if not isinstance(times, pd.DatetimeIndex):
-    sys.exit(f"Yahoo Finance {symbol}: expected dated closes")
-if isinstance(timezone, str) and times.tz is not None:
-    times = times.tz_convert(timezone)
-local_all = times.tz_localize(None)  # exchange local time
+if not isinstance(times, pd.DatetimeIndex) or times.tz is None:
+    sys.exit(f"Yahoo Finance {symbol}: expected timezone-aware dated closes")
+times = times.tz_convert(DISPLAY_TIMEZONE)
+zone = times[-1].tzname()  # AEDT or AEST, as at the last bar
+local_all = times.tz_localize(None)  # Sydney time
 in_chart = local_all >= start.normalize()  # the warm-up history is not charted
 local = local_all[in_chart]
 close = ohlc["Close"][in_chart]
@@ -175,7 +176,8 @@ paid = bool(((dividends.index > local[0]) & (dividends.index <= local[-1])).any(
 basis = f"{BASIS[adjusted]} " if paid else ""  # without a dividend, adjusted and raw are the same
 first, last = float(close.iloc[0]), float(close.iloc[-1])
 change = f"Change over {period}: {last / first - 1:+.1%}."
-lfooter = f"{INTERVAL_WORDS.get(interval, interval + ' bars')}. {basis}{change}"
+clock = f"Sydney time ({zone}). " if interval in INTRADAY else ""  # daily bars carry no clock time
+lfooter = f"{INTERVAL_WORDS.get(interval, interval + ' bars')}. {clock}{basis}{change}"
 # --- indicators from the full history, then the charted rows; the moving averages are
 # recalibrated with the prices they overlay, the MACD (already a percentage) is not
 indicators = pd.DataFrame(index=ohlc.index)

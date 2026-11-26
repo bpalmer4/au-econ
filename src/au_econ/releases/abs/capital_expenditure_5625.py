@@ -91,6 +91,7 @@ def _level_and_growth(series: pd.Series, units: str, *, title: str, lfooter: str
         series,
         function=line_plot_finalise,
         starts=quarterly_plot_times,
+        annotate=True,
         title=title,
         ylabel=f"{units}/Quarter",
         rfooter=source,
@@ -158,6 +159,7 @@ def datacentre_imt_equipment_vs_buildings(release: AbsRelease) -> None:
     frame, units = ra.recalibrate(raw, units)  # one scale for both series
     line_plot_finalise(
         frame,
+        annotate=True,
         title="CapEx: Info Media & Telecom: Equipment vs Buildings",
         ylabel=f"{units}/Quarter",
         rfooter=release.source,
